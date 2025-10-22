@@ -8,6 +8,7 @@ ROMA Debug Override: Log-Based Debugger Agent
 ROMA (Sentient Research Agent) with a log-based Debugger Agent! This update adds a custom executor that analyzes runtime logs/errors and generates actionable fixes. Trigger it with goals like "debug this error..."ROMA becomes self aware, chunking logs and suggesting code tweaks via Python/Reasoning tools. Built on ROMA's hierarchical framework, fork and test!
 
  About the Debugger Agent:
+	
   The DebuggerAgent is a custom ExecutorAdapter (registered in agents.yaml) that intercepts debug goals. It's not full "auto-debugging" yet!, but it: Triggers on Keywords: Scans node goals for "debug" > Overrides to EXECUTE mode, skipping planning.
 Log Analysis: Chunks large logs (4k chars + overlap), feeds to GPT-4o with a specialized prompt: "You are a log-based debugger for ROMA... Analyze errors, suggest fixes."
 Tool Enhanced: Uses PythonTools (code inspect/run) + ReasoningTools (step-by-step logic) for deep dives.
@@ -16,6 +17,7 @@ Structured Output: Returns ExecutorOutput with error_count, suggestions (list), 
 It's extensible, add "fix" triggers or git diffs for true auto-healing.
 
 Features
+
 Keyword Override: Automatic for "debug" in goals (e.g., root node).
 Log Chunking: Handles huge traces (overlap to avoid mid-error splits).
 Tool Integration: Python for code exec, Reasoning for flow tracing.
@@ -25,6 +27,7 @@ Structured Fixes: JSON-like output: {"error_count": 1, "suggestions": ["Update y
 No Sub-Tasks: Keeps it atomic, outputs direct to root for speeds.
 
 Problem It Solves
+
  ROMA's power comes from complex agents/tools, but runtime bugs (e.g., deprecated models like "llama3-70b-8192", import fails, tool errors) halt everything. Devs waste hours:
 Hunting logs in Docker/terminal.
 Manual fixes in yaml/code.
@@ -43,12 +46,15 @@ Output:
 }
 
  Installation
+	
  Prerequisites
+	
 Python 3.11+ (or Docker for easy setup).
 API Keys: OpenAI (GPT-4o), Groq (optional for tools).
 Git: Clone this fork.
 
 Step-by-Step Setup
+
 Clone Repo:
 
 git clone https://github.com/Samfresh-ai/ROMA-debug-override.git
@@ -92,11 +98,13 @@ curl -X POST http://localhost:8000/api/projects/configured \
 Response: Project ID + state (poll /api/projects/{id}/state).
 
 Advanced Test
+
 Edit custom_agents/orchestrator_agent.py: Add print("Custom debug run!") in process().
 Run goal with fake error log in context (via KnowledgeStore mock).
 Expected: "Custom debug run!" in logs + structured output.
 
  Requirements
+	
 Core: Python 3.11, Docker Compose.
 APIs: OpenAI (GPT-4o), Groq (tools).
 Libs: See requirements.txt (litellm, agno, pydantic, loguru).
@@ -104,6 +112,7 @@ Frontend: Node.js 18+, Vite (for UI dev).
 No extras runs on ROMA base. 
 
 Outputs
+
 DebuggerAgent returns ExecutorOutput (Pydantic model):
 output_text: Full analysis (markdown).
 error_count: Keyword hits (e.g., "error", "failed").
@@ -114,6 +123,7 @@ View in UI (NodeDetailsPanel) or logs.
 
 
 Project Structure:
+
 .
 ├── .env*                  # API keys
 ├── docker-compose.yml     # Full stack deploy
@@ -144,6 +154,7 @@ Debug Flow: node_processor.py > execute_handler.py > orchestrator_agent.py > Out
 Full tree: tree -a (ROMA's full stack + custom agents).
 
 Contributions
+
 Easy Wins: Add triggers ("fix this bug") in node_processor.py.
 Ideas: Git tool for auto-PR diffs; multi-agent chaining.
 PR Process: Fork > Branch "feature/xyz" > Test with make test > Submit.
@@ -152,6 +163,7 @@ Issues: "Test on [error type]" I'll review fast.
 Join Sentient Discord #builder-junior for collabs! 
 
 Future Improvements
+
 Auto-Debug: Poll logs periodically (no keyword needed) watch for errors, trigger proactively.
 Multi-Tool: Add GitTools for auto-commits; integrate with ROMA's evals for fix validation.
 UI Polish: Debug panel in frontend (e.g., log viewer + suggestion button).
@@ -159,6 +171,7 @@ Upstream PR: Merge to ROMA core, make it default!
 Eval Suite: Add to evals/ for benchmark (e.g., "Fix rate: 90% on common errors").
 
  License
+	
  MIT—fork, extend, share. Built on ROMA (Apache 2.0).
  
  Made with LOVE for SentientAGI. Questions? @freshmilli22 on Discord. 
