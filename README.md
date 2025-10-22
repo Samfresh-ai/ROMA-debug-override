@@ -1,179 +1,190 @@
-ROMA Debug Override: Log-Based Debugger Agent
+# ROMA Debug Override: Log-Based Debugger Agent
 
 ![GitHub stars](https://img.shields.io/github/stars/samfresh-ai/ROMA-debug-override?style=social)
 ![GitHub forks](https://img.shields.io/github/forks/samfresh-ai/ROMA-debug-override?style=social)
 ![GitHub issues](https://img.shields.io/github/issues/samfresh-ai/ROMA-debug-override)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
-ROMA (Sentient Research Agent) with a log-based Debugger Agent! This update adds a custom executor that analyzes runtime logs/errors and generates actionable fixes. Trigger it with goals like "debug this error..."ROMA becomes self aware, chunking logs and suggesting code tweaks via Python/Reasoning tools. Built on ROMA's hierarchical framework, fork and test!
+ROMA (Sentient Research Agent) with a log-based Debugger Agent! This update adds a custom executor that analyzes runtime logs/errors and generates actionable fixes. Trigger it with goals like "debug this error...". ROMA becomes self-aware, chunking logs and suggesting code tweaks via Python/Reasoning tools. Built on ROMA's hierarchical framework—fork and test!
 
- About the Debugger Agent:
-	
-  The DebuggerAgent is a custom ExecutorAdapter (registered in agents.yaml) that intercepts debug goals. It's not full "auto-debugging" yet!, but it: Triggers on Keywords: Scans node goals for "debug" > Overrides to EXECUTE mode, skipping planning.
-Log Analysis: Chunks large logs (4k chars + overlap), feeds to GPT-4o with a specialized prompt: "You are a log-based debugger for ROMA... Analyze errors, suggest fixes."
-Tool Enhanced: Uses PythonTools (code inspect/run) + ReasoningTools (step-by-step logic) for deep dives.
-Structured Output: Returns ExecutorOutput with error_count, suggestions (list), and solution (markdown steps).
+## About the Debugger Agent
 
-It's extensible, add "fix" triggers or git diffs for true auto-healing.
+The `DebuggerAgent` is a custom `ExecutorAdapter` (registered in `agents.yaml`) that intercepts debug goals. It's not full "auto-debugging" yet, but it:
 
-Features
+- **Triggers on Keywords**: Scans node goals for "debug" and overrides to EXECUTE mode, skipping planning.
+- **Log Analysis**: Chunks large logs (4k chars + overlap) and feeds them to GPT-4o with a specialized prompt: "You are a log-based debugger for ROMA... Analyze errors, suggest fixes."
+- **Tool Enhanced**: Uses `PythonTools` (code inspect/run) + `ReasoningTools` (step-by-step logic) for deep dives.
+- **Structured Output**: Returns `ExecutorOutput` with `error_count`, `suggestions` (list), and `solution` (markdown steps).
 
-Keyword Override: Automatic for "debug" in goals (e.g., root node).
-Log Chunking: Handles huge traces (overlap to avoid mid-error splits).
-Tool Integration: Python for code exec, Reasoning for flow tracing.
-Tracing Hooks: Logs to ROMA's TraceManager (view in UI).
-Fallback Prompt: Custom system message for ROMA-specific errors (imports, agents, models).
-Structured Fixes: JSON-like output: {"error_count": 1, "suggestions": ["Update yaml model_id"], "solution": "Steps: 1. Edit agents.yaml..."}.
-No Sub-Tasks: Keeps it atomic, outputs direct to root for speeds.
+It's extensible—add "fix" triggers or git diffs for true auto-healing.
 
-Problem It Solves
+## Features
 
- ROMA's power comes from complex agents/tools, but runtime bugs (e.g., deprecated models like "llama3-70b-8192", import fails, tool errors) halt everything. Devs waste hours:
-Hunting logs in Docker/terminal.
-Manual fixes in yaml/code.
-No built-in "self-diagnose."
+- **Keyword Override**: Automatic for "debug" in goals (e.g., root node).
+- **Log Chunking**: Handles huge traces (overlap to avoid mid-error splits).
+- **Tool Integration**: Python for code exec, Reasoning for flow tracing.
+- **Tracing Hooks**: Logs to ROMA's `TraceManager` (view in UI).
+- **Fallback Prompt**: Custom system message for ROMA-specific errors (imports, agents, models).
+- **Structured Fixes**: JSON-like output: `{"error_count": 1, "suggestions": ["Update yaml model_id"], "solution": "Steps: 1. Edit agents.yaml..."}`.
+- **No Sub-Tasks**: Keeps it atomic, outputs direct to root for speeds.
 
-This agent turns "debug this error: [traceback]" into instant suggestions e.g., "Groq deprecation? Swap to llama3-70b-versatile in agents.yaml." Saves sanity, speeds iteration.
+## Problem It Solves
 
-Example Input: "debug this error: BadRequestError: GroqException - {'error': {'message': 'The model llama3-70b-8192 has been decommissioned...'}}"
+ROMA's power comes from complex agents/tools, but runtime bugs (e.g., deprecated models like "llama3-70b-8192", import fails, tool errors) halt everything. Devs waste hours:
 
-Output: 
+- Hunting logs in Docker/terminal.
+- Manual fixes in yaml/code.
+- No built-in "self-diagnose."
 
+This agent turns "debug this error: [traceback]" into instant suggestions, e.g., "Groq deprecation? Swap to llama3-70b-versatile in agents.yaml." Saves sanity, speeds iteration.
+
+### Example Input
+```
+debug this error: BadRequestError: GroqException - {'error': {'message': 'The model llama3-70b-8192 has been decommissioned...'}
+```
+
+### Example Output
+```json
 {
   "solution": "The model 'llama3-70b-8192' is deprecated. Steps:\n1. Update agents.yaml: Change 'groq/llama-3.3-70b-versatile'.\n2. Restart docker-compose.\n3. Test: Run a SEARCH goal.",
   "error_count": 1,
   "suggestions": ["PR to upstream ROMA", "Add model validation hook"]
 }
+```
 
- Installation
-	
- Prerequisites
-	
-Python 3.11+ (or Docker for easy setup).
-API Keys: OpenAI (GPT-4o), Groq (optional for tools).
-Git: Clone this fork.
+## Installation
 
-Step-by-Step Setup
+### Prerequisites
 
-Clone Repo:
+- Python 3.11+ (or Docker for easy setup).
+- API Keys: OpenAI (GPT-4o), Groq (optional for tools).
+- Git: Clone this fork.
 
-git clone https://github.com/Samfresh-ai/ROMA-debug-override.git
-cd roma-debug-override
+### Step-by-Step Setup
 
-Env Setup:
+1. **Clone Repo**:
+   ```bash
+   git clone https://github.com/Samfresh-ai/ROMA-debug-override.git
+   cd roma-debug-override
+   ```
 
-cp .env.example .env
-# Edit .env: Add OPENAI_API_KEY=sk-..., GROQ_API_KEY=gsk-...
+2. **Env Setup**:
+   ```bash
+   cp .env.example .env
+   # Edit .env: Add OPENAI_API_KEY=sk-..., GROQ_API_KEY=gsk-...
+   ```
 
-Docker (Recommended—Full Stack):
+3. **Docker (Recommended—Full Stack)**:
+   ```bash
+   docker-compose up --build
+   ```
+   - Access UI: http://localhost:5173/
+   - Backend logs: Watch terminal (Docker).
 
-docker-compose up --build
+4. **Local Dev (No Docker)**:
+   ```bash
+   pip install -r requirements.txt
+   python src/sentientresearchagent/framework_entry.py
+   ```
+   - UI: `cd frontend && npm install && npm run dev` (http://localhost:8000/).
 
-Access UI: http://localhost:5173/
-Backend logs: Watch terminal (Docker).
+5. **Verify**: Health check:
+   ```bash
+   curl http://localhost:8000/health
+   ```
+   (Expect 200 OK.)
 
-Local Dev (No Docker):
+## Testing the Agent
 
-pip install -r requirements.txt
-python src/sentientresearchagent/framework_entry.py
+### Basic Test (UI)
+1. Open http://localhost:5173/.
+2. Create Project: Goal = "debug this error: BadRequestError: GroqException - {'error': {'message': 'The model llama3-70b-8192 has been decommissioned and is no longer supported.'}}".
+3. Run: Watch logs for "DEBUG OVERRIDE" > "DebuggerAgent" > Output in UI (solution dict).
 
-UI: cd frontend && npm install && npm run dev (http://localhost:8000/).
-
-Verify: Health check: curl http://localhost:8000/health > 200 OK.
-
- Testing the Agent
- Basic Test (UI)
- Open http://localhost:5173/.
-
-Create Project: Goal = "debug this error: BadRequestError: GroqException - {'error': {'message': 'The model llama3-70b-8192 has been decommissioned and is no longer supported.'}}".
-Run: Watch logs for "DEBUG OVERRIDE" > "DebuggerAgent" > Output in UI (solution dict).
-
-CLI Test
-
+### CLI Test
+```bash
 # From root
 curl -X POST http://localhost:8000/api/projects/configured \
   -H "Content-Type: application/json" \
   -d '{"goal": "debug this error: [paste traceback]"}'
+```
+Response: Project ID + state (poll `/api/projects/{id}/state`).
 
-Response: Project ID + state (poll /api/projects/{id}/state).
+### Advanced Test
+1. Edit `custom_agents/orchestrator_agent.py`: Add `print("Custom debug run!")` in `process()`.
+2. Run goal with fake error log in context (via KnowledgeStore mock).
+3. Expected: "Custom debug run!" in logs + structured output.
 
-Advanced Test
+## Requirements
 
-Edit custom_agents/orchestrator_agent.py: Add print("Custom debug run!") in process().
-Run goal with fake error log in context (via KnowledgeStore mock).
-Expected: "Custom debug run!" in logs + structured output.
+- **Core**: Python 3.11, Docker Compose.
+- **APIs**: OpenAI (GPT-4o), Groq (tools).
+- **Libs**: See `requirements.txt` (litellm, agno, pydantic, loguru).
+- **Frontend**: Node.js 18+, Vite (for UI dev).
+- No extras—runs on ROMA base.
 
- Requirements
-	
-Core: Python 3.11, Docker Compose.
-APIs: OpenAI (GPT-4o), Groq (tools).
-Libs: See requirements.txt (litellm, agno, pydantic, loguru).
-Frontend: Node.js 18+, Vite (for UI dev).
-No extras runs on ROMA base. 
+## Outputs
 
-Outputs
+`DebuggerAgent` returns `ExecutorOutput` (Pydantic model):
+- `output_text`: Full analysis (markdown).
+- `error_count`: Keyword hits (e.g., "error", "failed").
+- `suggestions`: List of fixes (e.g., ["Update yaml", "Add import"]).
+- `solution`: Step-by-step guide (e.g., "1. Edit agents.yaml...\n2. Restart.").
 
-DebuggerAgent returns ExecutorOutput (Pydantic model):
-output_text: Full analysis (markdown).
-error_count: Keyword hits (e.g., "error", "failed").
-suggestions: List of fixes (e.g., ["Update yaml", "Add import"]).
-solution: Step-by-step guide (e.g., "1. Edit agents.yaml...\n2. Restart.").
+View in UI (`NodeDetailsPanel`) or logs.
 
-View in UI (NodeDetailsPanel) or logs.
+## Project Structure
 
-
-Project Structure:
-
+```
 .
-├── .env*                  # API keys
-├── docker-compose.yml     # Full stack deploy
-├── frontend/              # React UI (Vite + TS)
-│   ├── src/               # Components: TaskGraphVisualization, NodeDetailsPanel
+├── .env.example            # API keys template
+├── docker-compose.yml      # Full stack deploy
+├── frontend/               # React UI (Vite + TS)
+│   ├── src/                # Components: TaskGraphVisualization, NodeDetailsPanel
 │   └── vite.config.ts
 ├── src/sentientresearchagent/
 │   ├── hierarchical_agent_framework/
 │   │   ├── agent_configs/
-│   │   │   ├── **agents.yaml**     # Registers DebuggerAgent (type: executor, tools: Python/Reasoning)
-│   │   │   └── models.py           # Pydantic for configs
+│   │   │   ├── agents.yaml        # Registers DebuggerAgent (type: executor, tools: Python/Reasoning)
+│   │   │   └── models.py          # Pydantic for configs
 │   │   ├── agents/
-│   │   │   └── **registry.py**     # Named lookup for "DebuggerAgent"
+│   │   │   └── registry.py        # Named lookup for "DebuggerAgent"
 │   │   ├── context/
-│   │   │   └── agent_io_models.py  # ExecutorOutput schema
+│   │   │   └── agent_io_models.py # ExecutorOutput schema
 │   │   ├── node/
-│   │   │   ├── **node_processor.py** # Override trigger (debug goal > agent_name)
+│   │   │   ├── node_processor.py  # Override trigger (debug goal > agent_name)
 │   │   │   └── node_handlers/
-│   │   │       └── **execute_handler.py** # Short-circuit: Honors node.agent_name
+│   │   │       └── execute_handler.py # Short-circuit: Honors node.agent_name
 │   │   └── services/
-│   │       └── **agent_selector.py** # Fallback (skipped for debug)
-│   └── **custom_agents/
-│       └── **orchestrator_agent.py** # Core: Log chunking, LLM call, tool extraction
-└── requirements.txt       # Litellm, agno, etc.
+│   │       └── agent_selector.py  # Fallback (skipped for debug)
+│   └── custom_agents/
+│       └── orchestrator_agent.py  # Core: Log chunking, LLM call, tool extraction
+└── requirements.txt        # Litellm, agno, etc.
+```
 
-Debug Flow: node_processor.py > execute_handler.py > orchestrator_agent.py > Output.
+**Debug Flow**: `node_processor.py` > `execute_handler.py` > `orchestrator_agent.py` > Output.
 
-Full tree: tree -a (ROMA's full stack + custom agents).
+Full tree: `tree -a` (ROMA's full stack + custom agents).
 
-Contributions
+## Contributions
 
-Easy Wins: Add triggers ("fix this bug") in node_processor.py.
-Ideas: Git tool for auto-PR diffs; multi-agent chaining.
-PR Process: Fork > Branch "feature/xyz" > Test with make test > Submit.
-Issues: "Test on [error type]" I'll review fast.
+- **Easy Wins**: Add triggers ("fix this bug") in `node_processor.py`.
+- **Ideas**: Git tool for auto-PR diffs; multi-agent chaining.
+- **PR Process**: Fork > Branch "feature/xyz" > Test with `make test` > Submit.
+- **Issues**: "Test on [error type]"—I'll review fast.
 
-Join Sentient Discord #builder-junior for collabs! 
+Join Sentient Discord #builder-junior for collabs!
 
-Future Improvements
+## Future Improvements
 
-Auto-Debug: Poll logs periodically (no keyword needed) watch for errors, trigger proactively.
-Multi-Tool: Add GitTools for auto-commits; integrate with ROMA's evals for fix validation.
-UI Polish: Debug panel in frontend (e.g., log viewer + suggestion button).
-Upstream PR: Merge to ROMA core, make it default!
-Eval Suite: Add to evals/ for benchmark (e.g., "Fix rate: 90% on common errors").
+- **Auto-Debug**: Poll logs periodically (no keyword needed)—watch for errors, trigger proactively.
+- **Multi-Tool**: Add GitTools for auto-commits; integrate with ROMA's evals for fix validation.
+- **UI Polish**: Debug panel in frontend (e.g., log viewer + suggestion button).
+- **Upstream PR**: Merge to ROMA core, make it default!
+- **Eval Suite**: Add to `evals/` for benchmark (e.g., "Fix rate: 90% on common errors").
 
- License
-	
- MIT—fork, extend, share. Built on ROMA (Apache 2.0).
- 
- Made with LOVE for SentientAGI. Questions? @freshmilli22 on Discord. 
- Star if it works for you ser! 
+## License
 
+MIT—fork, extend, share. Built on ROMA (Apache 2.0).
+
+Made with ❤️ for SentientAGI. Questions? @freshmilli22 on Discord. Star if it works for you!
