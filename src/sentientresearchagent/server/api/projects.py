@@ -198,16 +198,47 @@ def create_project_routes(app, project_service, execution_service):
     def get_project_state(project_id: str):
         """Get project state for frontend load."""
         try:
-            state = project_service.project_manager.load_project_state(project_id)
+            # FIXED: Check file first
+            project_dir = Path(project_service.project_manager.projects_dir) / project_id
+            state_file = project_dir / "graph_state.json"
+            emergency_file = project_dir / "emergency_backup.json"  # Or full path from logs
+        
+            state = None
+            if state_file.exists():
+                with open(state_file, 'r') as f:
+                    raw_data = json.load(f)
+                    if raw_data:  # Not empty
+                        state = raw_data
+                        logger.info(f"Loaded state from graph_state.json for {project_id}: {len(raw_data.get('all_nodes', {}))} nodes")
+                    else:
+                        logger.warning(f"Empty graph_state.json for {project_id}")
+            else:
+                logger.warning(f"No graph_state.json for {project_id}")
+        
+            # FIXED: Fallback to emergency backup if no state
+            if not state and emergency_file.exists():
+                logger.info(f"Falling back to emergency backup for {project_id}")
+                with open(emergency_file, 'r') as f:
+                    emergency_data = json.load(f)
+                    # Extract graph/state from emergency (adapt structure if needed)
+                    state = emergency_data.get('graph_data', emergency_data.get('all_nodes', {})) or emergency_data
+                    logger.info(f"Loaded emergency state for {project_id}: {len(state.get('all_nodes', {}))} nodes")
+        
             if not state:
                 logger.warning(f"No saved state for project {project_id}")
                 return jsonify({"error": "No saved state"}), 404
+        
             # FIXED: Trigger full reconstruct/deserialize
             context = project_service.project_manager.get_project_execution_context(project_id)
             if context:
-                context.load_state(state)  # Deserialize/reconstruct (enums/Dates)
+                context.load_state(state, no_clear=True)  # Deserialize/reconstruct (enums/Dates)
+                # POLISH: Re-serialize post-load for full structure
+                state = context.save_state()  # Get reconstructed dict
             logger.info(f"Loaded state for {project_id}: {len(state.get('all_nodes', {}))} nodes")
             return jsonify(state)  # Raw JSON—frontend deserializes
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parse error for {project_id}: {e}")
+            return jsonify({"error": "Invalid saved state format"}), 500
         except Exception as e:
             logger.error(f"Failed to load state for {project_id}: {e}")
             return jsonify({"error": str(e)}), 500

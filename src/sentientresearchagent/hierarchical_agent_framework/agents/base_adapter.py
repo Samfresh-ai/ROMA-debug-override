@@ -698,9 +698,9 @@ Ensure your output is a valid JSON conforming to the PlanOutput schema, containi
                 
                 # Handle structured output parsing if needed
                 if self.agno_agent.response_model and isinstance(actual_content_data, str):
-                    parsed_data = self._extract_and_parse_json(actual_content_data, self.agno_agent.response_model)
+                    parsed_data = await self._extract_and_parse_json(actual_content_data, self.agno_agent.response_model)
                     if parsed_data:
-                        actual_content_data = parsed_data
+                        actual_content_data = parsed_data # Use resolved dict/str
 
                 logger.info(f"Adapter '{self.agent_name}': Successfully processed. Type of actual_content_data: {type(actual_content_data)}")
                 return actual_content_data

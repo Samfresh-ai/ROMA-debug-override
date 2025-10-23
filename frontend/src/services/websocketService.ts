@@ -558,13 +558,24 @@ class WebSocketService {
         if (msg.total_nodes > 0 && Object.keys(taskGraphStore.nodes).length === 0) {
           // Poll full state
           fetch(`/api/projects/${msg.project_id}/state`)
-            .then(res => res.json())
+            .then(res => {
+              if (!res.ok) {
+                throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+              }
+              return res.json();
+            })
             .then(state => {
-  const deserializedState = deserializeState(state);  // FIXED: Already there, but ensure
-  taskGraphStore.setData(deserializedState);
-  console.log('🔄 Polled & deserialized state:', deserializedState.all_nodes?.length || 0, 'nodes');
-})
-            .catch(err => console.error('Poll failed:', err));
+              const deserializedState = deserializeState(state);  // FIXED: Already there, but ensure
+              taskGraphStore.setData(deserializedState);
+              console.log('🔄 Polled & deserialized state:', deserializedState.all_nodes?.length || 0, 'nodes');
+            })
+            .catch(err => {
+              console.error('Poll failed:', err);
+              // FIXED: Always use fallback (WS has partial data)
+              console.log('🔄 Fallback: Using WS complete data for setData');
+              const fallbackData = deserializeState(msg);
+              taskGraphStore.setData(fallbackData);
+            });
         }
         taskGraphStore.setLoading(false);
         

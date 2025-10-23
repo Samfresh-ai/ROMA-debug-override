@@ -51,8 +51,7 @@ const formatDataSize = (str: string): string => {
 
 // MOVED INSIDE: Now has access to finalReport via closure
 const FullResultModal: React.FC<FullResultModalProps> = ({ isOpen, onClose, node }) => {
-  // FIXED: Early return AFTER all hooks
-  if (!isOpen) return null;
+  
   // FIXED: All hooks BEFORE early return
   const [copiedField, setCopiedField] = useState<string | null>(null)
   const { finalReport } = useTaskGraphStore();
@@ -68,24 +67,28 @@ const FullResultModal: React.FC<FullResultModalProps> = ({ isOpen, onClose, node
   // MOVED INSIDE: detectDataType now accesses finalReport directly
   const detectDataType = (node: TaskNode): FormattedData => {
     // Priority for project-level finalReport (if modal is used for completion)
-    if (finalReport && finalReport.trim().length > 0) {
-      return {
-        type: 'markdown' as const,  // Assume markdown from backend
-        content: finalReport,
-        size: formatDataSize(finalReport),
-        isLarge: finalReport.length > 10000,
-        source: 'project_final_report'  // NEW: Special source
-      };
-    }
-    // FIXED: Priority for loaded complete (root full_result)
-    if (finalReport && finalReport.trim().length > 0) {
-      return {
-        type: 'markdown' as const,
-        content: finalReport,
-        size: formatDataSize(finalReport),
-        isLarge: finalReport.length > 10000,
-        source: 'project_final_report'  // Your special source
-      };
+    if (finalReport) {
+      let reportContent: string;
+      if (typeof finalReport === 'string') {
+        reportContent = finalReport.trim();
+      } else if (typeof finalReport === 'object' && finalReport !== null) {
+        // Extract output_text if structured (common from ROMA/WS), else stringify
+        reportContent = (finalReport as any).output_text?.trim() || 
+                        (finalReport as any).result?.trim() || 
+                        JSON.stringify(finalReport, null, 2);
+      } else {
+        reportContent = String(finalReport || '').trim();
+      }
+
+      if (reportContent.length > 0) {
+        return {
+          type: 'markdown' as const,  // Assume markdown from backend (logs show text)
+          content: reportContent,
+          size: formatDataSize(reportContent),
+          isLarge: reportContent.length > 10000,
+          source: 'project_final_report'
+        };
+      }
     }
 
     // FIXED: Fallback to root node if no report (for incomplete loads)
@@ -202,7 +205,7 @@ const FullResultModal: React.FC<FullResultModalProps> = ({ isOpen, onClose, node
       if (e.detail.report) {
         // FIXED: Deserialize report if raw
         const deserializedReport = typeof e.detail.report === 'object' ? 
-          deserializeState({ all_nodes: { temp: { full_result: e.detail.report } } }).all_nodes.temp.full_result.output_text || e.detail.report : 
+          ((e.detail.report as any).output_text || (e.detail.report as any).result || JSON.stringify(e.detail.report, null, 2)) :
           e.detail.report;
         
         // Set a temp "project root" node for the modal (mock for report)
@@ -224,6 +227,9 @@ const FullResultModal: React.FC<FullResultModalProps> = ({ isOpen, onClose, node
     window.addEventListener('showFinalReport', handleShowReport as EventListener);
     return () => window.removeEventListener('showFinalReport', handleShowReport as EventListener);
   }, []);
+
+  // FIXED: Early return AFTER all hooks (no conditional skips)
+  if (!isOpen) return null;
 
   const copyToClipboard = async (text: string, field: string) => {
     try {
@@ -458,7 +464,7 @@ const FullResultModal: React.FC<FullResultModalProps> = ({ isOpen, onClose, node
               {formattedData.size}
             </div>
           </div>
-          <DialogDescription className="text-left">
+          <DialogDescription asChild className="text-left">
             <div className="space-y-1">
               <div><strong>Task:</strong> {node.goal}</div>
               <div><strong>Task ID:</strong> <code className="text-xs bg-muted px-1 rounded">{node.task_id}</code></div>
@@ -472,14 +478,14 @@ const FullResultModal: React.FC<FullResultModalProps> = ({ isOpen, onClose, node
           {renderContent()}
           
           {/* NEW: Render project final report if available */}
-          {finalReport && finalReport.trim() && (
+          {finalReport && (
             <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border-l-4 border-blue-500">
               <h3 className="font-semibold mb-2 flex items-center">
                 <CheckCircle className="w-4 h-4 mr-2 text-green-600" />
                 Project Final Report
               </h3>
               <AdvancedMarkdownViewer 
-                content={finalReport}
+                content={typeof finalReport === 'string' ? finalReport : (finalReport as any).output_text || JSON.stringify(finalReport, null, 2)}
                 maxHeight="400px"
                 title="Project Summary"
                 showControls={true}

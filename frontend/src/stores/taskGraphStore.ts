@@ -207,8 +207,8 @@ export const useTaskGraphStore = create<TaskGraphState>()(
       const deserializedData = deserializeState(data);
       // FIXED: Skip empty (poll fail—don't overwrite good data)
       if (!deserializedData.all_nodes || Object.keys(deserializedData.all_nodes).length === 0) {
-        console.warn('🏪 STORE: Skipped empty setData (poll fail?)');
-        return;  // FIXED: Preserve existing 21 nodes
+        console.warn('🏪 STORE: Skipped empty setData (poll fail? Using last known state)');
+        return;
       }
       
       const prevState = get()

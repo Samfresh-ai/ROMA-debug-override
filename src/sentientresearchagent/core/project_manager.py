@@ -258,10 +258,25 @@ class ProjectManager:
             # Update project stats
             node_count = len(task_graph_data.get('all_nodes', {}))
             self.update_project(project_id, node_count=node_count)
-            # FIXED: Optional WS emit (inject socketio or use global if needed)
-            # If socketio available: self.socketio.server.emit('project_state_updated', {'projectId': project_id, 'data': task_graph_data}, namespace='/')
+
+            # FIXED: Guarded emit - only if socketio available and not recent emit
+            # Assume app.socketio from global/context (adapt if needed)
+            try:
+                from ..server.app import app  # Or inject
+                if hasattr(app, 'socketio') and app.socketio:
+                    # Check last emit time (add self.last_emit = {} in init)
+                    if not hasattr(self, 'last_emits'):
+                        self.last_emits = {}
+                    now = datetime.now().timestamp()
+                    if self.last_emits.get(project_id, 0) < now - 1:  # Throttle 1s
+                        app.socketio.emit('project_state_updated', {'projectId': project_id, 'data': task_graph_data}, namespace='/')
+                        self.last_emits[project_id] = now
+                        logger.debug(f"Emitted state update for {project_id}")
+            except Exception as emit_err:
+                logger.debug(f"Could not emit update for {project_id}: {emit_err}")
+        
             logger.info(f"💾 Saved {node_count} nodes for {project_id}")
-            
+        
         except Exception as e:
             logger.error(f"Failed to save project state for {project_id}: {e}")
     
@@ -276,7 +291,7 @@ class ProjectManager:
                     raw_data = json.load(f)
                     context = self.get_project_execution_context(project_id)  # FIXED: Now defined
                     if context:
-                        context.load_state(raw_data)  # Full reconstruct
+                        context.load_state(raw_data, no_clear=True)  # Preserve for query
                     return raw_data
         except Exception as e:
             logger.error(f"Failed to load project state for {project_id}: {e}")
@@ -397,23 +412,23 @@ class ProjectExecutionContext:
             'node_processor_config': self.node_processor_config
         }
     
-    def load_state(self, project_state: Dict[str, Any]) -> bool:
+    def load_state(self, project_state: Dict[str, Any], no_clear: bool = False) -> bool:
         """
         Load project state into this execution context.
         
         Args:
             project_state: Serialized project state
-            
-        Returns:
-            True if successful, False otherwise
+            no_clear: If True, don't clear existing state (for query loads)
+
         """
         try:
-            # Clear existing state
-            self.task_graph.nodes.clear()
-            self.task_graph.graphs.clear()
-            self.task_graph.root_graph_id = None
-            self.task_graph.overall_project_goal = None
-            self.knowledge_store.clear()
+            if not no_clear:
+                # Clear existing state
+                self.task_graph.nodes.clear()
+                self.task_graph.graphs.clear()
+                self.task_graph.root_graph_id = None
+                self.task_graph.overall_project_goal = None
+                self.knowledge_store.clear()
             
             if 'all_nodes' in project_state:
                 # Load nodes by deserializing dictionaries back to TaskNode objects
