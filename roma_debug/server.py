@@ -1,6 +1,7 @@
 """FastAPI Backend for ROMA Debug."""
 
 import logging
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,28 +38,34 @@ class AnalyzeRequest(BaseModel):
 
 class AnalyzeResponse(BaseModel):
     """Response schema for /analyze endpoint."""
-    fix: str
+    explanation: str
+    code: str
+    filepath: Optional[str] = None
 
 
 @app.post("/analyze", response_model=AnalyzeResponse)
 async def analyze(request: AnalyzeRequest):
-    """Analyze an error log and return a code fix.
+    """Analyze an error log and return a structured code fix.
 
     Accepts JSON { "log": "...", "context": "..." }
-    Returns the Gemini fix.
+    Returns structured fix with explanation, code, and filepath.
 
     Args:
         request: The analysis request with log and optional context
 
     Returns:
-        AnalyzeResponse with the fix
+        AnalyzeResponse with explanation, code, and optional filepath
 
     Raises:
         HTTPException: If analysis fails
     """
     try:
-        fix = analyze_error(request.log, request.context)
-        return AnalyzeResponse(fix=fix)
+        result = analyze_error(request.log, request.context)
+        return AnalyzeResponse(
+            explanation=result.explanation,
+            code=result.full_code_block,
+            filepath=result.filepath,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

@@ -8,7 +8,9 @@ export interface AnalyzeRequest {
 }
 
 export interface AnalyzeResponse {
-  fix: string;
+  explanation: string;
+  code: string;
+  filepath: string | null;
 }
 
 export interface HealthResponse {

@@ -2,21 +2,21 @@ import { useState } from 'react';
 import { Header } from './components/Header';
 import { LogPasteArea } from './components/LogPasteArea';
 import { FixDisplay } from './components/FixDisplay';
-import { analyzeError } from './services/api';
+import { analyzeError, AnalyzeResponse } from './services/api';
 
 function App() {
   const [isLoading, setIsLoading] = useState(false);
-  const [fix, setFix] = useState<string | null>(null);
+  const [result, setResult] = useState<AnalyzeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (log: string) => {
     setIsLoading(true);
     setError(null);
-    setFix(null);
+    setResult(null);
 
     try {
       const response = await analyzeError(log);
-      setFix(response.fix);
+      setResult(response);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -50,16 +50,20 @@ function App() {
           )}
 
           {/* Result Section */}
-          {fix && (
+          {result && (
             <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
                 <svg className="w-5 h-5 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                         d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                Result
+                {result.filepath ? 'Fix Available' : 'General Advice'}
               </h2>
-              <FixDisplay fix={fix} />
+              <FixDisplay
+                code={result.code}
+                explanation={result.explanation}
+                filepath={result.filepath}
+              />
             </section>
           )}
         </div>
