@@ -80,6 +80,7 @@ experiments/configs/*.yaml
 !experiments/configs/example_*.yaml
 
 # Legacy output directories (to be migrated)
+_archieve/
 project_results/
 emergency_backups/
 emergency_backups/*
