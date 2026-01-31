@@ -1,0 +1,37 @@
+version: "3.9"
+
+services:
+  sentient-backend:
+    image: docker-backend
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile.backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../custom_agents:/app/custom_agents
+      - ../src/sentientresearchagent:/app/sentientresearchagent
+    environment:
+      - PYTHONPATH=/app:/app/custom_agents
+      - AGENT_CONFIG_PATH=/app/sentientresearchagent/hierarchical_agent_framework/agent_configs/agents.yaml
+    env_file:
+      - ./.env   # ✅ uses ~/ROMA/docker/.env
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
+
+  sentient-frontend:
+    image: docker-frontend
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile.frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      sentient-backend:
+        condition: service_healthy
+    environment:
+      - DOCKER_ENV=true   # 👈 new line, tells Vite it's inside Docker
