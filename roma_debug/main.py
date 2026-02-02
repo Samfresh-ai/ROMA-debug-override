@@ -6,6 +6,7 @@ Supports V1 (simple) and V2 (deep debugging) modes.
 
 import difflib
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -42,6 +43,71 @@ LANGUAGE_CHOICES = {
     "rs": Language.RUST,
     "java": Language.JAVA,
 }
+
+PROJECT_ROOT_MARKERS = (
+    ".git",
+    "pyproject.toml",
+    "setup.py",
+    "requirements.txt",
+    "package.json",
+    "go.mod",
+    "Cargo.toml",
+    "pom.xml",
+    "build.gradle",
+)
+
+FILEPATH_PATTERN = re.compile(
+    r"""(?P<path>
+        [A-Za-z0-9_\-./\\]+
+        \.(?:py|js|jsx|ts|tsx|go|rs|java)
+    )""",
+    re.VERBOSE,
+)
+
+
+def _find_project_root(start_path: Path) -> Path | None:
+    """Find a project root by walking up from a path."""
+    if start_path.is_file():
+        start_path = start_path.parent
+
+    for candidate in (start_path, *start_path.parents):
+        for marker in PROJECT_ROOT_MARKERS:
+            if (candidate / marker).exists():
+                return candidate
+    return None
+
+
+def _extract_paths_from_log(error_log: str) -> list[Path]:
+    """Extract candidate file paths from an error log."""
+    paths: list[Path] = []
+    for match in FILEPATH_PATTERN.finditer(error_log):
+        raw_path = match.group("path").strip()
+        candidate = Path(raw_path)
+        if not candidate.is_absolute():
+            candidate = Path.cwd() / candidate
+        paths.append(candidate)
+    return paths
+
+
+def determine_project_root(
+    error_log: str,
+    default_root: Path,
+    explicit_root: str | None = None,
+) -> Path:
+    """Determine the project root for project-aware analysis."""
+    if explicit_root:
+        return Path(explicit_root).resolve()
+
+    extracted_paths = _extract_paths_from_log(error_log)
+    for path in extracted_paths:
+        if path.exists():
+            root = _find_project_root(path)
+            if root:
+                return root
+
+    default_root = default_root.resolve()
+    fallback_root = _find_project_root(default_root)
+    return fallback_root or default_root
 
 
 def print_welcome():
@@ -499,6 +565,7 @@ def analyze_and_interact(
     error_log: str,
     deep: bool = False,
     language_hint: str | None = None,
+    project_root: str | None = None,
 ):
     """Analyze error and run interactive fix workflow.
 
@@ -515,6 +582,7 @@ def analyze_and_interact(
     context = ""
     contexts = []
     analysis_ctx = None
+    resolved_project_root = determine_project_root(error_log, Path.cwd(), project_root)
 
     if deep:
         # V2: Use context builder for deep debugging with project awareness
@@ -523,7 +591,7 @@ def analyze_and_interact(
                 from roma_debug.tracing.context_builder import ContextBuilder
 
                 language = LANGUAGE_CHOICES.get(language_hint.lower()) if language_hint else None
-                builder = ContextBuilder(project_root=os.getcwd(), scan_project=True)
+                builder = ContextBuilder(project_root=str(resolved_project_root), scan_project=True)
 
                 # Show project info
                 project_info = builder.project_info
@@ -588,7 +656,7 @@ def analyze_and_interact(
                     from roma_debug.tracing.context_builder import ContextBuilder
 
                     language = LANGUAGE_CHOICES.get(language_hint.lower()) if language_hint else None
-                    builder = ContextBuilder(project_root=os.getcwd(), scan_project=True)
+                    builder = ContextBuilder(project_root=str(resolved_project_root), scan_project=True)
 
                     # Show project info
                     project_info = builder.project_info
@@ -643,7 +711,11 @@ def analyze_and_interact(
         interactive_fix(result)
 
 
-def interactive_mode(deep: bool = False, language_hint: str | None = None):
+def interactive_mode(
+    deep: bool = False,
+    language_hint: str | None = None,
+    project_root: str | None = None,
+):
     """Run interactive mode - paste errors, get fixes.
 
     Args:
@@ -675,7 +747,12 @@ def interactive_mode(deep: bool = False, language_hint: str | None = None):
             break
 
         # Analyze and offer to fix
-        analyze_and_interact(error_log, deep=deep, language_hint=language_hint)
+        analyze_and_interact(
+            error_log,
+            deep=deep,
+            language_hint=language_hint,
+            project_root=project_root,
+        )
 
         # Ask to continue
         console.print()
@@ -693,12 +770,17 @@ def interactive_mode(deep: bool = False, language_hint: str | None = None):
 @click.option("--no-apply", is_flag=True, help="Show fixes without applying")
 @click.option("--deep", is_flag=True, help="Enable deep debugging (V2) with root cause analysis")
 @click.option(
+    "--project-root",
+    type=click.Path(file_okay=False, dir_okay=True, path_type=Path),
+    help="Project root to scan for project awareness",
+)
+@click.option(
     "--language", "-l",
     type=click.Choice(list(LANGUAGE_CHOICES.keys()), case_sensitive=False),
     help="Language hint for the error (python, javascript, typescript, go, rust, java)"
 )
 @click.argument("error_input", required=False)
-def cli(serve, port, version, no_apply, deep, language, error_input):
+def cli(serve, port, version, no_apply, deep, project_root, language, error_input):
     """ROMA Debug - AI-powered code debugger with auto-fix.
 
     Just run 'roma' to start interactive mode and paste your errors.
@@ -731,16 +813,25 @@ def cli(serve, port, version, no_apply, deep, language, error_input):
     if error_input:
         # Direct file/string mode
         if os.path.isfile(error_input):
-            with open(error_input, 'r') as f:
+            error_input_path = Path(error_input)
+            with error_input_path.open('r') as f:
                 error_log = f.read()
+            default_root = error_input_path.parent
         else:
             error_log = error_input
+            default_root = Path.cwd()
 
         print_welcome()
 
         if deep:
             console.print("[bold cyan]Deep Debugging Mode[/bold cyan]")
             console.print()
+
+        resolved_project_root = determine_project_root(
+            error_log,
+            default_root,
+            str(project_root) if project_root else None,
+        )
 
         if no_apply:
             # Just show fix without interactive apply
@@ -750,7 +841,7 @@ def cli(serve, port, version, no_apply, deep, language, error_input):
                     from roma_debug.tracing.context_builder import ContextBuilder
 
                     lang_hint = LANGUAGE_CHOICES.get(language.lower()) if language else None
-                    builder = ContextBuilder(project_root=os.getcwd())
+                    builder = ContextBuilder(project_root=str(resolved_project_root))
                     analysis_ctx = builder.build_analysis_context(
                         error_log,
                         language_hint=lang_hint,
@@ -779,11 +870,20 @@ def cli(serve, port, version, no_apply, deep, language, error_input):
                 border_style="green",
             ))
         else:
-            analyze_and_interact(error_log, deep=deep, language_hint=language)
+            analyze_and_interact(
+                error_log,
+                deep=deep,
+                language_hint=language,
+                project_root=str(resolved_project_root),
+            )
         return
 
     # Default: interactive mode
-    interactive_mode(deep=deep, language_hint=language)
+    interactive_mode(
+        deep=deep,
+        language_hint=language,
+        project_root=str(project_root) if project_root else None,
+    )
 
 
 if __name__ == "__main__":
