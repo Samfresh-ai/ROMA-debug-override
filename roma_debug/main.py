@@ -1,6 +1,7 @@
 """Interactive CLI for ROMA Debug.
 
 Production-grade CLI with diff display and safe file patching.
+Supports V1 (simple) and V2 (deep debugging) modes.
 """
 
 import difflib
@@ -20,10 +21,27 @@ from rich import print as rprint
 from roma_debug import __version__
 from roma_debug.config import GEMINI_API_KEY, get_api_key_status
 from roma_debug.utils.context import get_file_context, get_primary_file
-from roma_debug.core.engine import analyze_error, FixResult
+from roma_debug.core.engine import analyze_error, analyze_error_v2, FixResult, FixResultV2
+from roma_debug.core.models import Language
 
 
 console = Console()
+
+
+# Language name mappings for CLI
+LANGUAGE_CHOICES = {
+    "python": Language.PYTHON,
+    "py": Language.PYTHON,
+    "javascript": Language.JAVASCRIPT,
+    "js": Language.JAVASCRIPT,
+    "typescript": Language.TYPESCRIPT,
+    "ts": Language.TYPESCRIPT,
+    "go": Language.GO,
+    "golang": Language.GO,
+    "rust": Language.RUST,
+    "rs": Language.RUST,
+    "java": Language.JAVA,
+}
 
 
 def print_welcome():
@@ -120,6 +138,22 @@ def display_diff(diff_text: str):
     console.print()
 
 
+def display_answer(result: FixResult):
+    """Display an ANSWER mode response (no code patch).
+
+    Args:
+        result: FixResult with action_type=ANSWER
+    """
+    console.print()
+    console.print(Panel(
+        f"[bold]Model:[/bold] {result.model_used}\n\n"
+        f"[bold]Answer:[/bold]\n{result.explanation}",
+        title="[bold cyan]Investigation Result[/bold cyan]",
+        border_style="cyan",
+    ))
+    console.print("\n[dim]This was an information query. No code changes needed.[/dim]")
+
+
 def display_fix_result(result: FixResult, is_general: bool = False):
     """Display the fix result in a panel.
 
@@ -128,6 +162,11 @@ def display_fix_result(result: FixResult, is_general: bool = False):
         is_general: If True, display as general advice (no file target)
     """
     console.print()
+
+    # Check if this is an ANSWER mode response
+    if result.is_answer_only:
+        display_answer(result)
+        return
 
     if is_general or result.filepath is None:
         # General system error - no specific file
@@ -147,6 +186,57 @@ def display_fix_result(result: FixResult, is_general: bool = False):
             title="[bold green]Analysis Result[/bold green]",
             border_style="green",
         ))
+
+
+def display_fix_result_v2(result: FixResultV2):
+    """Display V2 fix result with root cause info.
+
+    Args:
+        result: FixResultV2 from engine
+    """
+    console.print()
+
+    # Check if this is an ANSWER mode response
+    if result.is_answer_only:
+        display_answer(result)
+        return
+
+    # Main result panel
+    if result.filepath is None:
+        console.print(Panel(
+            f"[bold]Type:[/bold] General Advice\n"
+            f"[bold]Model:[/bold] {result.model_used}\n\n"
+            f"[bold]Explanation:[/bold]\n{result.explanation}",
+            title="[bold yellow]General Advice[/bold yellow]",
+            border_style="yellow",
+        ))
+    else:
+        panel_content = f"[bold]File:[/bold] {result.filepath}\n"
+        panel_content += f"[bold]Model:[/bold] {result.model_used}\n\n"
+        panel_content += f"[bold]Explanation:[/bold]\n{result.explanation}"
+
+        console.print(Panel(
+            panel_content,
+            title="[bold green]Analysis Result[/bold green]",
+            border_style="green",
+        ))
+
+    # Root cause panel (if different file)
+    if result.has_root_cause:
+        console.print()
+        console.print(Panel(
+            f"[bold]Root Cause File:[/bold] {result.root_cause_file}\n\n"
+            f"[bold]Root Cause:[/bold]\n{result.root_cause_explanation}",
+            title="[bold magenta]Root Cause Analysis[/bold magenta]",
+            border_style="magenta",
+        ))
+
+    # Additional fixes
+    if result.additional_fixes:
+        console.print()
+        console.print("[bold cyan]Additional Files to Fix:[/bold cyan]")
+        for fix in result.additional_fixes:
+            console.print(f"  • {fix.filepath}: {fix.explanation}")
 
 
 def display_general_advice(result: FixResult):
@@ -259,7 +349,8 @@ def apply_fix(filepath: str, new_content: str) -> bool:
 def interactive_fix(result: FixResult):
     """Interactive workflow to apply a fix.
 
-    Handles three cases:
+    Handles four cases:
+    0. action_type is ANSWER -> Display answer only (no file ops)
     1. filepath is None -> Display as general advice (no file ops)
     2. filepath exists -> Show diff and offer to patch
     3. filepath doesn't exist -> Offer to create new file
@@ -267,6 +358,11 @@ def interactive_fix(result: FixResult):
     Args:
         result: FixResult from engine
     """
+    # Case 0: ANSWER mode - just display the answer
+    if result.is_answer_only:
+        display_answer(result)
+        return
+
     # Case 1: No filepath - general system error
     if result.filepath is None:
         display_general_advice(result)
@@ -332,11 +428,84 @@ def interactive_fix(result: FixResult):
         console.print("[dim]Skipped.[/dim]")
 
 
-def analyze_and_interact(error_log: str):
+def interactive_fix_v2(result: FixResultV2):
+    """Interactive workflow for V2 fixes with multiple files.
+
+    Args:
+        result: FixResultV2 from engine
+    """
+    # ANSWER mode - just display the answer, no patching
+    if result.is_answer_only:
+        display_answer(result)
+        return
+
+    # No filepath - general advice
+    if result.filepath is None:
+        display_general_advice(result)
+        return
+
+    # Display the full analysis
+    display_fix_result_v2(result)
+
+    # Handle primary fix
+    _apply_single_fix(result.filepath, result.full_code_block, "primary fix")
+
+    # Handle additional fixes
+    for fix in result.additional_fixes:
+        console.print()
+        console.print(f"[bold cyan]Additional fix for {fix.filepath}:[/bold cyan]")
+        console.print(f"[dim]{fix.explanation}[/dim]")
+        _apply_single_fix(fix.filepath, fix.full_code_block, "this fix")
+
+
+def _apply_single_fix(filepath: str, new_code: str, fix_name: str = "fix"):
+    """Apply a single fix interactively.
+
+    Args:
+        filepath: Path to the file
+        new_code: New code content
+        fix_name: Name for the fix in prompts
+    """
+    if not new_code:
+        console.print(f"[yellow]No code provided for {filepath}[/yellow]")
+        return
+
+    resolved = resolve_filepath(filepath)
+    original = read_file_content(resolved)
+
+    if original is None:
+        console.print(f"\n[yellow]File '{resolved}' does not exist.[/yellow]")
+        if Confirm.ask(f"Create new file?", default=False):
+            if apply_fix(resolved, new_code):
+                console.print(f"[green]Created: {resolved}[/green]")
+        return
+
+    diff_text = compute_diff(original, new_code, resolved)
+    if not diff_text.strip():
+        console.print(f"[yellow]No changes needed for {resolved}[/yellow]")
+        return
+
+    display_diff(diff_text)
+
+    if Confirm.ask(f"[bold]Apply {fix_name} to '{resolved}'?[/bold]", default=True):
+        backup = create_backup(resolved)
+        if backup:
+            console.print(f"[dim]Backup: {backup}[/dim]")
+        if apply_fix(resolved, new_code):
+            console.print(f"[green]Fixed: {resolved}[/green]")
+
+
+def analyze_and_interact(
+    error_log: str,
+    deep: bool = False,
+    language_hint: str | None = None,
+):
     """Analyze error and run interactive fix workflow.
 
     Args:
         error_log: The error log string
+        deep: Whether to use V2 deep debugging
+        language_hint: Optional language hint
     """
     if not error_log:
         console.print("[red]No error provided.[/red]")
@@ -345,21 +514,121 @@ def analyze_and_interact(error_log: str):
     # Extract file context
     context = ""
     contexts = []
-    with console.status("[bold blue]Reading source files..."):
-        context, contexts = get_file_context(error_log)
-        if context:
-            primary = get_primary_file(contexts)
-            if primary:
-                console.print(f"[green]Found context from {len(contexts)} file(s)[/green]")
-                if primary.function_name:
-                    console.print(f"[dim]Primary: {primary.filepath} (function: {primary.function_name})[/dim]")
-                elif primary.class_name:
-                    console.print(f"[dim]Primary: {primary.filepath} (class: {primary.class_name})[/dim]")
+    analysis_ctx = None
+
+    if deep:
+        # V2: Use context builder for deep debugging with project awareness
+        with console.status("[bold blue]Scanning project and analyzing error..."):
+            try:
+                from roma_debug.tracing.context_builder import ContextBuilder
+
+                language = LANGUAGE_CHOICES.get(language_hint.lower()) if language_hint else None
+                builder = ContextBuilder(project_root=os.getcwd(), scan_project=True)
+
+                # Show project info
+                project_info = builder.project_info
+                console.print(f"[cyan]Project: {project_info.project_type}[/cyan]")
+                if project_info.frameworks_detected:
+                    console.print(f"[cyan]Frameworks: {', '.join(project_info.frameworks_detected)}[/cyan]")
+
+                # Build analysis context
+                analysis_ctx = builder.build_analysis_context(
+                    error_log,
+                    language_hint=language,
+                )
+
+                # Use deep context for comprehensive analysis
+                context = builder.get_deep_context(error_log, language_hint=language)
+                contexts = analysis_ctx.traceback_contexts
+
+                # Report what we found
+                if contexts:
+                    console.print(f"[green]Found context from {len(contexts)} file(s)[/green]")
+                    if analysis_ctx.upstream_context:
+                        upstream_count = len(analysis_ctx.upstream_context.file_contexts)
+                        if upstream_count > 0:
+                            console.print(f"[green]Analyzed {upstream_count} upstream file(s)[/green]")
+
+                # Report error analysis findings
+                if analysis_ctx.error_analysis:
+                    ea = analysis_ctx.error_analysis
+                    console.print(f"[dim]Error type: {ea.error_type} ({ea.error_category})[/dim]")
+                    if ea.relevant_files:
+                        console.print(f"[green]Identified {len(ea.relevant_files)} relevant file(s):[/green]")
+                        for rf in ea.relevant_files[:3]:
+                            console.print(f"  [dim]- {rf.path}[/dim]")
+
+                # Show entry points if no explicit files found
+                if not contexts and project_info.entry_points:
+                    console.print(f"[yellow]No explicit traceback. Using entry points for context.[/yellow]")
+                    for ep in project_info.entry_points[:2]:
+                        console.print(f"  [dim]- {ep.path}[/dim]")
+
+            except Exception as e:
+                console.print(f"[yellow]Deep analysis failed, falling back to basic: {e}[/yellow]")
+                import traceback
+                traceback.print_exc()
+                context, contexts = get_file_context(error_log)
+    else:
+        # V1: Basic context extraction - but upgrade to deep if no traceback found
+        with console.status("[bold blue]Reading source files..."):
+            context, contexts = get_file_context(error_log)
+            if context:
+                primary = get_primary_file(contexts)
+                if primary:
+                    console.print(f"[green]Found context from {len(contexts)} file(s)[/green]")
+                    if primary.function_name:
+                        console.print(f"[dim]Primary: {primary.filepath} (function: {primary.function_name})[/dim]")
+                    elif primary.class_name:
+                        console.print(f"[dim]Primary: {primary.filepath} (class: {primary.class_name})[/dim]")
+            else:
+                # No traceback found - automatically use deep project awareness
+                console.print("[yellow]No traceback found. Activating project awareness...[/yellow]")
+                try:
+                    from roma_debug.tracing.context_builder import ContextBuilder
+
+                    language = LANGUAGE_CHOICES.get(language_hint.lower()) if language_hint else None
+                    builder = ContextBuilder(project_root=os.getcwd(), scan_project=True)
+
+                    # Show project info
+                    project_info = builder.project_info
+                    console.print(f"[cyan]Project: {project_info.project_type}[/cyan]")
+                    if project_info.frameworks_detected:
+                        console.print(f"[cyan]Frameworks: {', '.join(project_info.frameworks_detected)}[/cyan]")
+                    if project_info.entry_points:
+                        console.print(f"[cyan]Entry points: {', '.join(ep.path for ep in project_info.entry_points[:3])}[/cyan]")
+
+                    # Build analysis context with project awareness
+                    analysis_ctx = builder.build_analysis_context(
+                        error_log,
+                        language_hint=language,
+                    )
+
+                    # Get deep context
+                    context = builder.get_deep_context(error_log, language_hint=language)
+
+                    # Report error analysis findings
+                    if analysis_ctx.error_analysis:
+                        ea = analysis_ctx.error_analysis
+                        console.print(f"[dim]Error type: {ea.error_type} ({ea.error_category})[/dim]")
+                        if ea.relevant_files:
+                            console.print(f"[green]Found {len(ea.relevant_files)} relevant file(s):[/green]")
+                            for rf in ea.relevant_files[:3]:
+                                console.print(f"  [dim]- {rf.path}[/dim]")
+
+                    # Switch to V2 analysis
+                    deep = True
+
+                except Exception as e:
+                    console.print(f"[yellow]Project scanning failed: {e}[/yellow]")
 
     # Analyze with Gemini
     with console.status("[bold green]Analyzing with Gemini..."):
         try:
-            result = analyze_error(error_log, context)
+            if deep:
+                result = analyze_error_v2(error_log, context)
+            else:
+                result = analyze_error(error_log, context)
         except RuntimeError as e:
             console.print(f"\n[red]Configuration Error:[/red] {e}")
             return
@@ -368,12 +637,25 @@ def analyze_and_interact(error_log: str):
             return
 
     # Interactive fix workflow
-    interactive_fix(result)
+    if deep and isinstance(result, FixResultV2):
+        interactive_fix_v2(result)
+    else:
+        interactive_fix(result)
 
 
-def interactive_mode():
-    """Run interactive mode - paste errors, get fixes."""
+def interactive_mode(deep: bool = False, language_hint: str | None = None):
+    """Run interactive mode - paste errors, get fixes.
+
+    Args:
+        deep: Whether to use V2 deep debugging
+        language_hint: Optional language hint
+    """
     print_welcome()
+
+    if deep:
+        console.print("[bold cyan]Deep Debugging Mode Enabled[/bold cyan]")
+        console.print("[dim]Analyzing imports and call chains for root cause analysis[/dim]")
+        console.print()
 
     # Check for API key
     status = get_api_key_status()
@@ -393,7 +675,7 @@ def interactive_mode():
             break
 
         # Analyze and offer to fix
-        analyze_and_interact(error_log)
+        analyze_and_interact(error_log, deep=deep, language_hint=language_hint)
 
         # Ask to continue
         console.print()
@@ -409,8 +691,14 @@ def interactive_mode():
 @click.option("--port", default=8080, help="Port for API server")
 @click.option("--version", "-v", is_flag=True, help="Show version")
 @click.option("--no-apply", is_flag=True, help="Show fixes without applying")
+@click.option("--deep", is_flag=True, help="Enable deep debugging (V2) with root cause analysis")
+@click.option(
+    "--language", "-l",
+    type=click.Choice(list(LANGUAGE_CHOICES.keys()), case_sensitive=False),
+    help="Language hint for the error (python, javascript, typescript, go, rust, java)"
+)
 @click.argument("error_input", required=False)
-def cli(serve, port, version, no_apply, error_input):
+def cli(serve, port, version, no_apply, deep, language, error_input):
     """ROMA Debug - AI-powered code debugger with auto-fix.
 
     Just run 'roma' to start interactive mode and paste your errors.
@@ -420,6 +708,10 @@ def cli(serve, port, version, no_apply, error_input):
         roma                     # Interactive mode
 
         roma error.log           # Analyze a file directly
+
+        roma --deep error.log    # Deep debugging with root cause analysis
+
+        roma --language go error.log  # Specify language hint
 
         roma --serve             # Start web API server
 
@@ -446,26 +738,52 @@ def cli(serve, port, version, no_apply, error_input):
 
         print_welcome()
 
+        if deep:
+            console.print("[bold cyan]Deep Debugging Mode[/bold cyan]")
+            console.print()
+
         if no_apply:
             # Just show fix without interactive apply
-            context, _ = get_file_context(error_log)
-            result = analyze_error(error_log, context)
+            if deep:
+                # V2: Use ContextBuilder for deep analysis
+                try:
+                    from roma_debug.tracing.context_builder import ContextBuilder
 
-            if result.filepath is None:
-                display_general_advice(result)
+                    lang_hint = LANGUAGE_CHOICES.get(language.lower()) if language else None
+                    builder = ContextBuilder(project_root=os.getcwd())
+                    analysis_ctx = builder.build_analysis_context(
+                        error_log,
+                        language_hint=lang_hint,
+                    )
+                    context = builder.get_context_for_prompt(analysis_ctx)
+                except Exception as e:
+                    console.print(f"[yellow]Deep analysis failed, using basic: {e}[/yellow]")
+                    context, _ = get_file_context(error_log)
+
+                result = analyze_error_v2(error_log, context)
+                if isinstance(result, FixResultV2):
+                    display_fix_result_v2(result)
+                else:
+                    display_fix_result(result)
             else:
-                display_fix_result(result)
-                console.print("\n[bold]Suggested Code:[/bold]")
-                console.print(Panel(
-                    Syntax(result.full_code_block, "python", theme="monokai", line_numbers=True),
-                    border_style="green",
-                ))
+                context, _ = get_file_context(error_log)
+                result = analyze_error(error_log, context)
+                if result.filepath is None:
+                    display_general_advice(result)
+                else:
+                    display_fix_result(result)
+
+            console.print("\n[bold]Suggested Code:[/bold]")
+            console.print(Panel(
+                Syntax(result.full_code_block, "python", theme="monokai", line_numbers=True),
+                border_style="green",
+            ))
         else:
-            analyze_and_interact(error_log)
+            analyze_and_interact(error_log, deep=deep, language_hint=language)
         return
 
     # Default: interactive mode
-    interactive_mode()
+    interactive_mode(deep=deep, language_hint=language)
 
 
 if __name__ == "__main__":

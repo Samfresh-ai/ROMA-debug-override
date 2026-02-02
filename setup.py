@@ -17,6 +17,14 @@ setup(
         "fastapi>=0.109.0",
         "uvicorn>=0.27.0",
         "python-dotenv>=1.0.0",
+        # V2: Multi-language support
+        "tree-sitter>=0.23.0",
+        "tree-sitter-python>=0.23.0",
+        "tree-sitter-javascript>=0.23.0",
+        "tree-sitter-typescript>=0.23.0",
+        "tree-sitter-go>=0.23.0",
+        "tree-sitter-rust>=0.23.0",
+        "tree-sitter-java>=0.23.0",
     ],
     entry_points={
         "console_scripts": [

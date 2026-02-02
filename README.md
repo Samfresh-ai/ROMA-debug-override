@@ -1,12 +1,12 @@
 # ROMA Debug
 
-**AI-Powered Code Debugger with Context-Aware Auto-Fix**
+**AI-Powered Multi-Language Debugger with Deep Root Cause Analysis**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Powered by Gemini](https://img.shields.io/badge/Powered%20by-Gemini-4285F4.svg)](https://ai.google.dev/)
 
-ROMA Debug analyzes Python tracebacks, extracts intelligent context using AST parsing, and generates targeted code fixes with Gemini. It's not a wrapper—it's a **context-aware patching engine** that understands your code structure.
+ROMA Debug analyzes error tracebacks across **6 programming languages**, extracts intelligent context using tree-sitter and AST parsing, traces imports and call chains to find **root causes**, and generates targeted code fixes with Gemini.
 
 ## Why ROMA?
 
@@ -14,32 +14,108 @@ Most AI debugging tools just paste your error into an LLM. ROMA is different:
 
 | Feature | Generic AI | ROMA Debug |
 |---------|-----------|------------|
-| Context Extraction | None | AST-parsed function/class boundaries |
+| Language Support | Python only | Python, JavaScript, TypeScript, Go, Rust, Java |
+| Context Extraction | None | AST/tree-sitter parsed function/class boundaries |
+| Root Cause Analysis | None | Import tracing + call chain analysis |
 | Output Format | Freeform text | Structured JSON with filepath + code |
 | Fix Application | Manual copy-paste | Interactive diff + one-key apply |
+| Multi-File Fixes | Single file | Root cause + additional fixes across files |
 | Backup Safety | None | Automatic `.bak` before patching |
-| Error Resilience | Crashes on missing files | Graceful fallback with system messages |
-| General Errors | Confusing output | Smart "General Advice" mode |
+
+## Features
+
+### Multi-Language Support
+
+ROMA uses **tree-sitter** for semantic parsing across languages:
+
+- **Python** - Native AST + tree-sitter
+- **JavaScript/TypeScript** - Full ES6+ and TSX support
+- **Go** - Functions, methods, and imports
+- **Rust** - Functions, structs, impl blocks
+- **Java** - Classes, methods, constructors
+
+### Deep Debugging Mode (V2)
+
+The `--deep` flag enables advanced root cause analysis:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Error in utils.py:15                                       │
+│       ↑                                                     │
+│  Called from main.py:42 → process_data()                    │
+│       ↑                                                     │
+│  Variable passed from api.py:28 → fetch_items()             │
+│       ↑                                                     │
+│  ROOT CAUSE: api.py returns wrong type                      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+- **Import Resolution** - Traces imports to find related files
+- **Dependency Graph** - Maps file relationships
+- **Call Chain Analysis** - Follows execution flow through traceback
+- **Upstream Context** - Provides AI with caller/callee information
+
+### Deep Project Awareness (NEW)
+
+ROMA doesn't just analyze tracebacks—it understands your entire project:
+
+```
+$ roma --deep
+Project: flask
+Frameworks: flask
+Entry Points: app.py
+
+Error: "Cannot GET /index.html"
+
+Error type: http (http_404)
+Relevant Files: app.py, routes.py
+
+╭── Analysis Result ──────────────────────────────────────────╮
+│ File: app.py                                                │
+│ ...                                                         │
+╰─────────────────────────────────────────────────────────────╯
+```
+
+Even without explicit tracebacks, ROMA can:
+
+- **Scan Project Structure** - Identifies project type (Flask, Express, Go, etc.)
+- **Detect Frameworks** - Recognizes Flask, FastAPI, Django, Express, React, etc.
+- **Find Entry Points** - Locates main.py, app.py, server.js, etc.
+- **Analyze Error Messages** - Extracts routes, keywords, and error categories
+- **Find Relevant Files** - Discovers files related to the error without file paths
+- **Provide Context** - Gives AI full project understanding for accurate fixes
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    A[CLI / Web UI] --> B[Context Manager]
-    B --> C{AST Parser}
-    C -->|Success| D[Function/Class Extract]
-    C -->|Fail| E[Line-based Fallback]
-    D --> F[Gemini API]
-    E --> F
-    F --> G[JSON Response]
-    G --> H{Has Filepath?}
-    H -->|Yes| I[Diff Engine]
-    H -->|No| J[General Advice]
-    I --> K{User Prompt}
-    K -->|Yes| L[Backup + Patch]
-    K -->|No| M[Skip]
-    L --> N[File System]
+    A[CLI / Web UI] --> B[Project Scanner]
+    B --> C[Error Analyzer]
+    C --> D[Traceback Parser]
+    D --> E{Language Detection}
+    E --> F[Tree-sitter Parser]
+    E --> G[Python AST Parser]
+    F --> H[Context Builder]
+    G --> H
+    H --> I[Import Resolver]
+    I --> J[Dependency Graph]
+    J --> K[Call Chain Analyzer]
+    K --> L[Gemini API]
+    L --> M[JSON Response]
+    M --> N{Has Root Cause?}
+    N -->|Yes| O[Multi-File Fixes]
+    N -->|No| P[Single Fix]
+    O --> Q[Diff Engine]
+    P --> Q
+    Q --> R[User Prompt]
+    R --> S[Backup + Patch]
 ```
+
+**Key Components:**
+- **Project Scanner** - Scans project structure, detects frameworks and entry points
+- **Error Analyzer** - Analyzes error messages to find relevant files (even without tracebacks)
+- **Traceback Parser** - Parses multi-language stack traces
+- **Context Builder** - Orchestrates all analysis to build comprehensive AI context
 
 ## Quick Start
 
@@ -50,6 +126,8 @@ git clone https://github.com/your-org/ROMA.git
 cd ROMA
 pip install -e .
 ```
+
+This installs all dependencies including tree-sitter language parsers.
 
 ### Set API Key
 
@@ -66,12 +144,13 @@ Get your API key from [Google AI Studio](https://aistudio.google.com/apikey).
 ### Run
 
 ```bash
-roma
+roma              # Basic mode
+roma --deep       # Deep debugging with root cause analysis
 ```
 
 ## Usage
 
-### Interactive Mode (Recommended)
+### Interactive Mode
 
 ```bash
 $ roma
@@ -89,6 +168,9 @@ Traceback (most recent call last):
     return items[index]
 IndexError: list index out of range
 
+Found context from 1 file(s)
+Primary: src/main.py (function: process_data)
+
 ╭── Analysis Result ──────────────────────────╮
 │ File: src/main.py                           │
 │ Model: gemini-2.5-flash-lite                │
@@ -97,82 +179,114 @@ IndexError: list index out of range
 │ Added bounds checking before list access    │
 ╰─────────────────────────────────────────────╯
 
-Proposed Changes:
---- a/src/main.py
-+++ b/src/main.py
-@@ -40,7 +40,9 @@
- def process_data(items, index):
--    return items[index]
-+    if index < 0 or index >= len(items):
-+        return None
-+    return items[index]
-
 Apply this fix to 'src/main.py'? [Y/n]: y
-Backup created: src/main.py.bak
 Success! Fixed: src/main.py
 ```
 
-### General Advice Mode
-
-For system errors without a specific file (API errors, config issues), ROMA provides general advice without trying to patch files:
+### Deep Debugging Mode
 
 ```bash
-$ roma
+$ roma --deep
+
+╭─────────────────────────────────────────────╮
+│ ROMA Debug - AI-Powered Code Debugger       │
+╰─────────────────────────────────────────────╯
+
+Deep Debugging Mode Enabled
+Analyzing imports and call chains for root cause analysis
 
 Paste your error log below:
-400 API key not valid. Please check your API key.
 
-╭── General Advice ───────────────────────────╮
-│ Type: General Advice                        │
+Traceback (most recent call last):
+  File "src/main.py", line 10, in <module>
+    run()
+  File "src/main.py", line 6, in run
+    result = process_data(data)
+  File "src/utils.py", line 5, in process_data
+    total += item.value
+AttributeError: 'int' object has no attribute 'value'
+
+Found context from 3 file(s)
+Analyzed 2 upstream file(s)
+
+╭── Analysis Result ──────────────────────────╮
+│ File: src/utils.py                          │
 │ Model: gemini-2.5-flash-lite                │
 │                                             │
 │ Explanation:                                │
-│ This is an API authentication error...      │
+│ The function expects objects with .value    │
+│ but receives plain integers from main.py    │
 ╰─────────────────────────────────────────────╯
 
-Suggested Code / Solution:
-╭─────────────────────────────────────────────╮
-│ # Check your .env file                      │
-│ GEMINI_API_KEY=your-valid-key-here          │
+╭── Root Cause Analysis ──────────────────────╮
+│ Root Cause File: src/main.py                │
+│                                             │
+│ Root Cause:                                 │
+│ main.py passes raw integers instead of      │
+│ Item objects to process_data()              │
 ╰─────────────────────────────────────────────╯
 
-This is general advice. No file will be modified.
+Additional Files to Fix:
+  • src/main.py: Wrap integers in Item objects
+```
+
+### Multi-Language Examples
+
+**JavaScript/Node.js:**
+```bash
+$ roma --language javascript error.log
+
+# Parses stack traces like:
+# TypeError: Cannot read property 'name' of undefined
+#     at processUser (/app/src/users.js:42:15)
+#     at async main (/app/src/index.js:10:5)
+```
+
+**Go:**
+```bash
+$ roma --language go panic.log
+
+# Parses panic traces like:
+# panic: runtime error: index out of range [5] with length 3
+# goroutine 1 [running]:
+# main.processData(...)
+#     /app/main.go:25 +0x1f
+```
+
+**Rust:**
+```bash
+$ roma --language rust error.log
+
+# Parses panic traces like:
+# thread 'main' panicked at 'index out of bounds'
+#     src/main.rs:15:10
 ```
 
 ### Direct File Analysis
 
 ```bash
-roma error.log
+roma error.log                    # Analyze from file
+roma --deep error.log             # Deep analysis from file
+roma --language go panic.log      # Specify language hint
+roma --no-apply error.log         # Show fix without applying
 ```
 
-### View-Only Mode
+### Web API Server
 
 ```bash
-roma --no-apply error.log
-```
-
-### Web Frontend
-
-```bash
-# Terminal 1: Start API server
+# Start API server
 roma --serve --port 8080
 
-# Terminal 2: Start frontend dev server
-cd frontend && npm install && npm run dev
+# API docs at http://localhost:8080/docs
 ```
-
-Open http://localhost:5173
-
-The web frontend displays:
-- **Explanation** - AI's analysis of the error
-- **Filepath** - Target file (or "General advice" warning if none)
-- **Code** - Syntax-highlighted fix with copy button
 
 ## CLI Commands
 
 | Command | Description |
 |---------|-------------|
 | `roma` | Interactive mode - paste errors, get fixes |
+| `roma --deep` | Deep debugging with root cause analysis |
+| `roma --language <lang>` | Specify language (python, javascript, typescript, go, rust, java) |
 | `roma <file>` | Analyze error log from file |
 | `roma --serve` | Start web API server (default: port 8080) |
 | `roma --no-apply <file>` | Show fix without applying |
@@ -180,54 +294,74 @@ The web frontend displays:
 
 ## How It Works
 
-### 1. Context Extraction
+### 1. Multi-Language Traceback Parsing
 
-ROMA uses Python's `ast` module to extract the **complete function or class** where the error occurred:
+ROMA auto-detects the language from traceback patterns:
 
-```python
-# Error at line 15 in calculate_total()
-# ROMA extracts the ENTIRE function (lines 10-25), not just +/- 10 lines
+| Language | Pattern Example |
+|----------|-----------------|
+| Python | `File "path.py", line 10, in func` |
+| JavaScript | `at func (/path/file.js:10:5)` |
+| TypeScript | `at func (/path/file.ts:10:5)` |
+| Go | `main.go:25 +0x1f` |
+| Rust | `panicked at 'msg', src/main.rs:15:10` |
+| Java | `at com.example.Class.method(File.java:10)` |
 
-def calculate_total(items):      # Line 10
-    total = 0
-    for item in items:
-        total += item.price      # Line 15 - ERROR HERE
-    return total                 # Line 25
+### 2. Semantic Code Parsing
+
+ROMA uses **tree-sitter** for multi-language parsing and Python's **ast** module for Python:
+
+```javascript
+// Error at line 15 in processUser()
+// ROMA extracts the ENTIRE function using tree-sitter
+
+function processUser(user) {     // Line 10
+    const name = user.name;
+    const email = user.email;
+    return formatUser(name, email);  // Line 15 - ERROR
+}
 ```
 
-If AST parsing fails (syntax error, non-Python file), it falls back to +/- 50 lines.
+### 3. Deep Debugging (V2)
 
-**Project Awareness**: ROMA searches for files relative to your current working directory, so it works correctly when you run `roma` from your project root.
+When `--deep` is enabled, ROMA:
 
-### 2. Structured AI Response
+1. **Parses the full traceback** - Extracts all frames
+2. **Resolves imports** - Finds related source files
+3. **Builds dependency graph** - Maps file relationships
+4. **Analyzes call chain** - Traces execution flow
+5. **Provides upstream context** - Gives AI the full picture
+
+### 4. Structured AI Response
 
 ROMA instructs Gemini to return machine-readable JSON:
 
+**V1 Response:**
 ```json
 {
-  "filepath": "src/calculator.py",
-  "full_code_block": "def calculate_total(items):\n    ...",
-  "explanation": "Added hasattr check to handle items without price."
+  "filepath": "src/utils.py",
+  "full_code_block": "def process_data(items):\n    ...",
+  "explanation": "Added type checking for items."
 }
 ```
 
-For general system errors (API errors, config issues), `filepath` is `null`:
-
+**V2 Response (Deep Mode):**
 ```json
 {
-  "filepath": null,
-  "full_code_block": "# Example fix...",
-  "explanation": "This is an API configuration error..."
+  "filepath": "src/utils.py",
+  "full_code_block": "def process_data(items):\n    ...",
+  "explanation": "Added type checking for items.",
+  "root_cause_file": "src/main.py",
+  "root_cause_explanation": "main.py passes wrong type to process_data()",
+  "additional_fixes": [
+    {
+      "filepath": "src/main.py",
+      "full_code_block": "...",
+      "explanation": "Convert integers to Item objects"
+    }
+  ]
 }
 ```
-
-### 3. Safe Patching
-
-- **Diff Preview**: See exact changes before applying
-- **Backup**: Automatic `.bak` file creation
-- **Confirmation**: Explicit yes/no prompt
-- **New Files**: Option to create missing files
-- **General Advice**: No file ops for system errors
 
 ## Project Structure
 
@@ -239,30 +373,39 @@ ROMA/
 │   ├── __init__.py
 │   ├── config.py               # Centralized configuration
 │   ├── main.py                 # Interactive CLI
-│   ├── server.py               # FastAPI backend
+│   ├── server.py               # FastAPI backend (V1 + V2 endpoints)
 │   ├── prompts.py              # System prompts
 │   ├── core/
-│   │   └── engine.py           # Gemini integration
+│   │   ├── engine.py           # Gemini integration
+│   │   └── models.py           # Data models (Language, Symbol, Import, etc.)
+│   ├── parsers/
+│   │   ├── base.py             # Abstract parser interface
+│   │   ├── registry.py         # Parser registry and language detection
+│   │   ├── python_ast_parser.py    # Python AST parser
+│   │   ├── treesitter_parser.py    # Multi-language tree-sitter parser
+│   │   └── traceback_patterns.py   # Multi-language traceback parsing
+│   ├── tracing/
+│   │   ├── import_resolver.py  # Import resolution (Python, JS, Go)
+│   │   ├── dependency_graph.py # File dependency tracking
+│   │   ├── call_chain.py       # Call chain analysis
+│   │   └── context_builder.py  # Deep context orchestration
 │   └── utils/
-│       └── context.py          # AST-based context extraction
+│       └── context.py          # Context extraction utilities
 ├── frontend/                   # React + Vite + Tailwind
-│   ├── src/
-│   │   ├── App.tsx             # Main app component
-│   │   ├── components/
-│   │   │   ├── FixDisplay.tsx  # Result display
-│   │   │   ├── Header.tsx
-│   │   │   └── LogPasteArea.tsx
-│   │   └── services/
-│   │       └── api.ts          # API client
-│   └── package.json
-└── tests/                      # pytest tests
+└── tests/                      # pytest tests (99 tests)
+    ├── test_parsers.py         # Parser tests (including tree-sitter)
+    ├── test_traceback_patterns.py  # Multi-language traceback tests
+    ├── test_tracing.py         # Import/dependency/call chain tests
+    ├── test_context.py         # Context extraction tests
+    └── test_engine.py          # Engine tests
 ```
 
 ## API Reference
 
-### POST /analyze
+### POST /analyze (V1)
 
-Request:
+Basic analysis endpoint.
+
 ```bash
 curl -X POST http://localhost:8080/analyze \
   -H "Content-Type: application/json" \
@@ -272,18 +415,60 @@ curl -X POST http://localhost:8080/analyze \
 Response:
 ```json
 {
-  "explanation": "Added bounds checking before list access.",
-  "code": "def process_data(items, index):\n    if index < 0 or index >= len(items):\n        return None\n    return items[index]",
+  "explanation": "Added bounds checking.",
+  "code": "def process_data(items, index):\n    ...",
   "filepath": "src/main.py"
 }
 ```
 
-For general errors, `filepath` will be `null`:
+### POST /analyze/v2 (V2 - Deep Debugging)
+
+Advanced analysis with root cause detection.
+
+```bash
+curl -X POST http://localhost:8080/analyze/v2 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "log": "Traceback...",
+    "project_root": "/path/to/project",
+    "language": "python",
+    "include_upstream": true
+  }'
+```
+
+Response:
 ```json
 {
-  "explanation": "This is an API authentication error...",
-  "code": "# Check your .env file\nGEMINI_API_KEY=your-key",
-  "filepath": null
+  "explanation": "Added type checking.",
+  "code": "def process_data(items):\n    ...",
+  "filepath": "src/utils.py",
+  "root_cause_file": "src/main.py",
+  "root_cause_explanation": "Passes wrong type",
+  "additional_fixes": [...],
+  "model_used": "gemini-2.5-flash-lite"
+}
+```
+
+### GET /info
+
+Get API capabilities and supported languages.
+
+```bash
+curl http://localhost:8080/info
+```
+
+Response:
+```json
+{
+  "version": "0.1.0",
+  "api_version": "v2",
+  "capabilities": {
+    "multi_language": true,
+    "deep_debugging": true,
+    "root_cause_analysis": true,
+    "multiple_fixes": true
+  },
+  "supported_languages": ["python", "javascript", "go", "rust", "java"]
 }
 ```
 
@@ -293,24 +478,11 @@ For general errors, `filepath` will be `null`:
 curl http://localhost:8080/health
 ```
 
-Response:
-```json
-{
-  "status": "ok",
-  "version": "0.1.0",
-  "api_key_configured": true
-}
-```
-
 ## Configuration
 
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `GEMINI_API_KEY` | Google AI API key | Yes |
-
-Configuration is loaded from:
-1. `.env` file in project root (recommended)
-2. Environment variables
 
 ## Models
 
@@ -322,11 +494,14 @@ ROMA uses these Gemini models with automatic fallback:
 ## Development
 
 ```bash
-# Install in editable mode
+# Install in editable mode with all dependencies
 pip install -e .
 
-# Run tests
+# Run tests (99 tests)
 pytest
+
+# Run specific test file
+pytest tests/test_parsers.py -v
 
 # Start backend server
 roma --serve
@@ -341,4 +516,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-Built for the hackathon. Powered by [Gemini](https://ai.google.dev/).
+Built for the hackathon. Powered by [Gemini](https://ai.google.dev/) and [tree-sitter](https://tree-sitter.github.io/).
