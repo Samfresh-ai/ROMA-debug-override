@@ -669,9 +669,10 @@ def cli(serve, port, version, no_apply, language, error_input):
 
     if serve:
         import uvicorn
-        console.print(f"[green]Starting ROMA Debug API on http://127.0.0.1:{port}[/green]")
-        console.print(f"[dim]API docs at http://127.0.0.1:{port}/docs[/dim]")
-        uvicorn.run("roma_debug.server:app", host="127.0.0.1", port=port)
+        bind_port = int(os.environ.get("PORT", port))
+        console.print(f"[green]Starting ROMA Debug API on http://0.0.0.0:{bind_port}[/green]")
+        console.print(f"[dim]API docs at http://0.0.0.0:{bind_port}/docs[/dim]")
+        uvicorn.run("roma_debug.server:app", host="0.0.0.0", port=bind_port)
         return
 
     if error_input:
