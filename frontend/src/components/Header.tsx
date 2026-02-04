@@ -1,17 +1,38 @@
+import { useEffect, useState } from 'react';
+
 /**
  * Header component
  */
 
 export function Header() {
   const githubUrl = import.meta.env.VITE_GITHUB_URL || 'https://github.com/Samfresh-ai/ROMA-debug-override';
+  const taglines = [
+    'Gemini‑Powered',
+    'Traceback → Fix',
+    'Call Chain Insight',
+    'PR Ready Output',
+  ];
+  const [taglineIndex, setTaglineIndex] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setTaglineIndex((prev) => (prev + 1) % taglines.length);
+    }, 2400);
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <header className="py-6">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between">
           <div className="space-y-1">
-            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-              Gemini 3 Hackathon
+            <div className="flex flex-wrap items-center gap-3">
+              <div
+                key={taglineIndex}
+                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 transition-opacity duration-500"
+              >
+                {taglines[taglineIndex]}
+              </div>
             </div>
             <h1 className="text-3xl sm:text-4xl font-semibold text-slate-900">
               ROMA Debug
