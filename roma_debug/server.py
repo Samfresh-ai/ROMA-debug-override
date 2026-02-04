@@ -796,7 +796,7 @@ async def analyze(request: AnalyzeRequest, http_request: Request):
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health():
     """Health check endpoint."""
     return {
