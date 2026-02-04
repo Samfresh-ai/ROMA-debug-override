@@ -804,6 +804,12 @@ async def health():
     }
 
 
+@app.get("/")
+async def root():
+    """Root endpoint for health checks."""
+    return {"status": "ok", "service": "roma-debug"}
+
+
 @app.get("/info")
 async def info():
     """Get API information and capabilities."""
