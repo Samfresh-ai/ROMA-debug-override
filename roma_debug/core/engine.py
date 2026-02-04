@@ -19,9 +19,31 @@ from roma_debug.config import get_api_keys
 from roma_debug.prompts import SYSTEM_PROMPT
 
 
-# Model priority: try Gemini 3 first, then 2.5 fallback
+# Model priority: try Gemini 3 first, then 2.5 fallback, then 2.5 flash lite
 PRIMARY_MODEL = "gemini-3-flash-preview"
 FALLBACK_MODEL = "gemini-2.5-flash"
+FALLBACK_MODEL_LITE = "gemini-2.5-flash-lite"
+
+
+def _get_models_to_try() -> list[str]:
+    """Get model list from env override or default priority list."""
+    env_models = (
+        os.environ.get("ROMA_MODELS")
+        or os.environ.get("GEMINI_MODELS")
+        or os.environ.get("GOOGLE_MODELS")
+        or ""
+    )
+    models = [m.strip() for m in env_models.split(",") if m.strip()]
+    if models:
+        # De-dupe while preserving order
+        seen = set()
+        ordered = []
+        for m in models:
+            if m not in seen:
+                seen.add(m)
+                ordered.append(m)
+        return ordered
+    return [PRIMARY_MODEL, FALLBACK_MODEL, FALLBACK_MODEL_LITE]
 
 # Placeholder paths that indicate the AI couldn't determine the real path
 INVALID_PATHS = {
@@ -645,7 +667,7 @@ def analyze_error(
         response_mime_type="application/json",
     )
 
-    models_to_try = [PRIMARY_MODEL, FALLBACK_MODEL]
+    models_to_try = _get_models_to_try()
     last_error = None
 
     for model_name in models_to_try:
@@ -850,21 +872,22 @@ def analyze_error(
                 is_quota_error = any(x in error_str for x in [
                     "429", "quota", "rate limit", "resource exhausted", "resource_exhausted"
                 ])
+                is_overloaded_error = any(x in error_str for x in [
+                    "503", "unavailable", "overloaded"
+                ])
 
-                if is_quota_error:
+                if is_quota_error or is_overloaded_error:
                     retry_delay = _extract_retry_delay_seconds(error_str)
                     if len(keys) > 1:
-                        _KEY_INDEX += 1
                         if retry_delay > 0:
                             time.sleep(retry_delay)
                         continue
-                    if model_name == PRIMARY_MODEL:
-                        break  # Try fallback model
-
                     wait_time = retry_delay or ((2 ** attempt) * 5)
                     if attempt < max_retries - 1:
                         time.sleep(wait_time)
                         continue
+                    if model_name == PRIMARY_MODEL:
+                        break  # Try fallback model
 
                 raise
 

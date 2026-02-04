@@ -118,6 +118,7 @@ GITHUB_REDIRECT_URI=http://localhost:5173
 | `ROMA_MAX_REPO_FILES` | Max files for repo clones. |
 | `ROMA_MAX_REPO_BYTES` | Max repo size for clones. |
 | `ROMA_DEBUG_KEYS` | Print key index selection for debugging. |
+| `ROMA_MODELS` / `GEMINI_MODELS` | Comma‑separated model priority list (overrides defaults: `gemini-3-flash-preview, gemini-2.5-flash, gemini-2.5-flash-lite`). |
 
 ---
 
