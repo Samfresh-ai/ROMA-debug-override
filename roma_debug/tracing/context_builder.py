@@ -56,6 +56,7 @@ class ContextBuilder:
         self.project_scanner = ProjectScanner(str(self.project_root))
         self.error_analyzer = ErrorAnalyzer(self.project_scanner)
         self._project_info: Optional[ProjectInfo] = None
+        self._file_tree_cache: Optional[str] = None
 
         if scan_project:
             self._project_info = self.project_scanner.scan()
@@ -66,6 +67,15 @@ class ContextBuilder:
         if self._project_info is None:
             self._project_info = self.project_scanner.scan()
         return self._project_info
+
+    def get_file_tree(self, max_depth: int = 4, max_files_per_dir: int = 15) -> str:
+        """Get cached file tree representation."""
+        if self._file_tree_cache is None:
+            self._file_tree_cache = self.project_scanner.generate_file_tree(
+                max_depth=max_depth,
+                max_files_per_dir=max_files_per_dir,
+            )
+        return self._file_tree_cache
 
     def build_analysis_context(
         self,
@@ -507,7 +517,7 @@ class ContextBuilder:
 
         # Include file tree for environmental awareness
         if include_file_tree:
-            file_tree = self.project_scanner.generate_file_tree(max_depth=4, max_files_per_dir=15)
+            file_tree = self.get_file_tree(max_depth=4, max_files_per_dir=15)
             parts.append("<ProjectStructure>")
             parts.append("## FILE TREE")
             parts.append("Use this tree to verify file paths exist before suggesting changes.")

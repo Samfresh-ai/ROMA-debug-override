@@ -12,6 +12,7 @@ import threading
 import urllib.parse
 import urllib.request
 import logging
+import re
 from typing import Optional, List
 
 from fastapi import FastAPI, HTTPException, Request
@@ -178,12 +179,14 @@ def _build_analysis_response(
     context: str,
     project_root: Optional[str],
     include_upstream: bool,
+    file_tree: Optional[str] = None,
 ) -> AnalyzeResponse:
     result = analyze_error(
         log,
         context,
         include_upstream=include_upstream,
         project_root=project_root,
+        file_tree=file_tree,
     )
 
     primary_diff = None
@@ -375,17 +378,69 @@ def _cleanup_expired_repos() -> int:
     return removed
 
 
+def _redact_git_error(message: str) -> str:
+    if not message:
+        return message
+    return re.sub(r"oauth2:[^@\\s]+@github\\.com", "oauth2:***@github.com", message)
+
+
+def _ensure_git_identity(repo_path: str) -> None:
+    try:
+        name = subprocess.run(
+            ["git", "config", "user.name"],
+            cwd=repo_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        ).stdout.strip()
+        email = subprocess.run(
+            ["git", "config", "user.email"],
+            cwd=repo_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        ).stdout.strip()
+    except Exception:
+        return
+
+    if not name:
+        subprocess.run(
+            ["git", "config", "user.name", "ROMA Debug"],
+            cwd=repo_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+    if not email:
+        subprocess.run(
+            ["git", "config", "user.email", "roma-debug@local"],
+            cwd=repo_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+
+
 def _run_git(repo_path: str, args: list[str]) -> None:
     try:
-        subprocess.run(
+        result = subprocess.run(
             ["git"] + args,
             cwd=repo_path,
             check=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            text=True,
         )
     except subprocess.CalledProcessError as exc:
-        raise HTTPException(status_code=400, detail="Git command failed") from exc
+        stderr = _redact_git_error((exc.stderr or exc.stdout or "").strip())
+        detail = "Git command failed"
+        if stderr:
+            detail = f"Git command failed: {stderr}"
+        raise HTTPException(status_code=400, detail=detail) from exc
 
 
 @app.get("/github/oauth/start", response_model=GithubOAuthStartResponse)
@@ -515,6 +570,7 @@ async def github_analyze(request: GithubAnalyzeRequest, http_request: Request):
             }
             language_hint = language_map.get(request.language.lower())
 
+        file_tree = None
         try:
             from roma_debug.tracing.context_builder import ContextBuilder
 
@@ -527,6 +583,7 @@ async def github_analyze(request: GithubAnalyzeRequest, http_request: Request):
                 analysis_ctx,
                 include_upstream=request.include_upstream,
             )
+            file_tree = builder.get_file_tree(max_depth=4, max_files_per_dir=15)
         except Exception:
             context = ""
 
@@ -538,6 +595,7 @@ async def github_analyze(request: GithubAnalyzeRequest, http_request: Request):
                     context=context,
                     project_root=repo_path,
                     include_upstream=request.include_upstream,
+                    file_tree=file_tree,
                 )
                 break
             except Exception as exc:
@@ -584,6 +642,7 @@ async def analyze_stream(request: AnalyzeRequest, http_request: Request):
             project_root = request.project_root if allow_project_root else None
 
             context = request.context
+            file_tree = None
             if not context and project_root:
                 try:
                     from roma_debug.tracing.context_builder import ContextBuilder
@@ -609,6 +668,7 @@ async def analyze_stream(request: AnalyzeRequest, http_request: Request):
                         analysis_ctx,
                         include_upstream=request.include_upstream,
                     )
+                    file_tree = builder.get_file_tree(max_depth=4, max_files_per_dir=15)
                 except Exception as e:
                     logger.warning(f"Context building failed, using basic context: {e}")
 
@@ -618,6 +678,7 @@ async def analyze_stream(request: AnalyzeRequest, http_request: Request):
                 context=context,
                 project_root=project_root,
                 include_upstream=request.include_upstream,
+                file_tree=file_tree,
             )
             payload = json.dumps(response.dict())
             yield f"event: done\ndata: {payload}\n\n"
@@ -654,6 +715,7 @@ async def github_analyze_stream(request: GithubAnalyzeRequest, http_request: Req
             repo_path = _safe_repo_path(str(repo.get("repo_path")))
 
             language_hint = None
+            file_tree = None
             if request.language:
                 language_map = {
                     "python": Language.PYTHON,
@@ -677,6 +739,7 @@ async def github_analyze_stream(request: GithubAnalyzeRequest, http_request: Req
                     analysis_ctx,
                     include_upstream=request.include_upstream,
                 )
+                file_tree = builder.get_file_tree(max_depth=4, max_files_per_dir=15)
             except Exception:
                 context = ""
 
@@ -686,6 +749,7 @@ async def github_analyze_stream(request: GithubAnalyzeRequest, http_request: Req
                 context=context,
                 project_root=repo_path,
                 include_upstream=request.include_upstream,
+                file_tree=file_tree,
             )
             payload = json.dumps(response.dict())
             yield f"event: done\ndata: {payload}\n\n"
@@ -763,8 +827,11 @@ async def github_commit(request: GithubCommitRequest, http_request: Request):
     _ = _get_session_token(session_id)
     repo = _get_repo(request.repo_id, session_id)
     repo_path = _safe_repo_path(str(repo.get("repo_path")))
+    default_branch = str(repo.get("default_branch") or "main")
 
-    _run_git(repo_path, ["checkout", "-b", request.branch])
+    _run_git(repo_path, ["fetch", "origin", default_branch])
+    _run_git(repo_path, ["checkout", "-B", request.branch, f"origin/{default_branch}"])
+    _ensure_git_identity(repo_path)
     _run_git(repo_path, ["add", "."])
     _run_git(repo_path, ["commit", "-m", request.message])
 
@@ -778,7 +845,7 @@ async def github_open_pr(request: GithubPrRequest, http_request: Request):
     repo = _get_repo(request.repo_id, session_id)
     repo_path = _safe_repo_path(str(repo.get("repo_path")))
 
-    _run_git(repo_path, ["push", "origin", request.branch])
+    _run_git(repo_path, ["push", "--force-with-lease", "origin", request.branch])
 
     repo_url = str(repo.get("repo_url"))
     default_branch = str(repo.get("default_branch") or "main")
@@ -873,6 +940,7 @@ async def analyze(request: AnalyzeRequest, http_request: Request):
 
         # Build context if not provided
         context = request.context
+        file_tree = None
         if not context and project_root:
             try:
                 from roma_debug.tracing.context_builder import ContextBuilder
@@ -898,6 +966,7 @@ async def analyze(request: AnalyzeRequest, http_request: Request):
                     analysis_ctx,
                     include_upstream=request.include_upstream,
                 )
+                file_tree = builder.get_file_tree(max_depth=4, max_files_per_dir=15)
             except Exception as e:
                 logger.warning(f"Context building failed, using basic context: {e}")
 
@@ -906,6 +975,7 @@ async def analyze(request: AnalyzeRequest, http_request: Request):
             context=context,
             project_root=project_root,
             include_upstream=request.include_upstream,
+            file_tree=file_tree,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

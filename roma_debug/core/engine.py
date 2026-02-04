@@ -608,6 +608,7 @@ def analyze_error(
     max_retries: int = 3,
     include_upstream: bool = True,
     project_root: Optional[str] = None,
+    file_tree: Optional[str] = None,
 ) -> FixResult:
     """Analyze an error with investigation-first debugging (root cause analysis).
 
@@ -629,8 +630,9 @@ def analyze_error(
     debug_keys = os.environ.get("ROMA_DEBUG_KEYS", "").lower() in {"1", "true", "yes"}
 
     project_root = project_root or os.getcwd()
-    from roma_debug.utils.context import generate_file_tree
-    file_tree = generate_file_tree(project_root)
+    if file_tree is None:
+        from roma_debug.utils.context import generate_file_tree
+        file_tree = generate_file_tree(project_root)
     traceback_files = _extract_project_traceback_files(log, project_root)
     resolved_traceback_files = _resolve_traceback_files(traceback_files, project_root)
 
