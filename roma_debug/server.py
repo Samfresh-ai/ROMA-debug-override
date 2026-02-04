@@ -40,6 +40,7 @@ app = FastAPI(
 
 # Configure CORS
 allowed_origins_env = os.environ.get("ROMA_ALLOWED_ORIGINS", "*").strip()
+allowed_origin_regex = os.environ.get("ROMA_ALLOWED_ORIGIN_REGEX", "").strip() or None
 if allowed_origins_env == "*":
     allowed_origins = ["*"]
 else:
@@ -48,9 +49,10 @@ else:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_credentials=True,
+    allow_credentials=False if allowed_origins_env == "*" else True,
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_origin_regex=allowed_origin_regex,
 )
 
 
