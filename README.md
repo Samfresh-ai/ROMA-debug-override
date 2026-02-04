@@ -64,6 +64,8 @@ curl -X POST http://localhost:8080/analyze \
   -d '{"log": "Traceback...", "context": "", "project_root": "/path/to/project"}'
 ```
 
+Note: `project_root` is only accepted when `ROMA_ALLOW_PROJECT_ROOT=true`.
+
 ### GET /info
 ```bash
 curl http://localhost:8080/info
@@ -108,6 +110,7 @@ GITHUB_REDIRECT_URI=http://localhost:5173
 | `GEMINI_API_KEYS` | Comma‑separated keys (rotation pool). Recommended. |
 | `GEMINI_API_KEY` / `GEMINI_API_KEY2...` | Single/multi‑key fallback. |
 | `ROMA_ALLOWED_ORIGINS` | CORS allowlist (comma‑separated). |
+| `ROMA_ALLOWED_ORIGIN_REGEX` | CORS origin regex (useful for Render subdomains). |
 | `ROMA_API_KEY` | Require `X-ROMA-API-KEY` header for API. |
 | `ROMA_MAX_LOG_BYTES` | Max log size (bytes). |
 | `ROMA_MAX_PATCH_BYTES` | Max patch size (bytes) for writes. |

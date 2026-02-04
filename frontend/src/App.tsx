@@ -4,8 +4,10 @@ import { LogPasteArea } from './components/LogPasteArea';
 import { FixDisplay } from './components/FixDisplay';
 import {
   analyzeError,
+  analyzeErrorStream,
   AnalyzeResponse,
   githubAnalyzeRepo,
+  githubAnalyzeRepoStream,
   githubApplyPatchBatch,
   githubCommit,
   githubCloneRepo,
@@ -36,6 +38,7 @@ function App() {
   const [prUrl, setPrUrl] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingPatchCount, setPendingPatchCount] = useState(0);
+  const [statusText, setStatusText] = useState<string | null>(null);
 
   const oauthCode = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
@@ -65,21 +68,52 @@ function App() {
     setError(null);
     setResult(null);
     setPrUrl(null);
+    setStatusText('Preparing analysis...');
 
     try {
       if (useRepoAnalysis && repoId && githubSessionId) {
-        const response = await githubAnalyzeRepo(repoId, githubSessionId, log);
-        setResult(response);
-        setPendingPatch(response);
+        await githubAnalyzeRepoStream(
+          repoId,
+          githubSessionId,
+          log,
+          (msg) => setStatusText(msg),
+          (response) => {
+            setResult(response);
+            setPendingPatch(response);
+            setIsLoading(false);
+            setStatusText(null);
+          },
+          (msg) => {
+            setError(msg);
+            setIsLoading(false);
+            setStatusText(null);
+          },
+        );
       } else {
-        const response = await analyzeError(log);
-        setResult(response);
-        setPendingPatch(null);
+        await analyzeErrorStream(
+          log,
+          undefined,
+          (msg) => setStatusText(msg),
+          (response) => {
+            setResult(response);
+            setPendingPatch(null);
+            setIsLoading(false);
+            setStatusText(null);
+          },
+          (msg) => {
+            setError(msg);
+            setIsLoading(false);
+            setStatusText(null);
+          },
+        );
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
+      setStatusText(null);
     } finally {
-      setIsLoading(false);
+      if (!statusText) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -272,6 +306,11 @@ function App() {
           {/* Input Section */}
           <section className="rounded-2xl border border-slate-200 bg-white/80 shadow-lg shadow-slate-200/40 backdrop-blur p-6">
             <LogPasteArea onSubmit={handleSubmit} isLoading={isLoading} />
+            {statusText && (
+              <div className="mt-4 text-sm text-slate-600">
+                {statusText}
+              </div>
+            )}
           </section>
 
           {/* Error Display */}

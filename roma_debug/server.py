@@ -16,6 +16,7 @@ from typing import Optional, List
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from roma_debug import __version__
@@ -170,6 +171,61 @@ def _compute_diff(original: str, fixed: str, filepath: str) -> str:
         lineterm="",
     )
     return "".join(diff)
+
+
+def _build_analysis_response(
+    log: str,
+    context: str,
+    project_root: Optional[str],
+    include_upstream: bool,
+) -> AnalyzeResponse:
+    result = analyze_error(
+        log,
+        context,
+        include_upstream=include_upstream,
+        project_root=project_root,
+    )
+
+    primary_diff = None
+    if result.filepath and project_root:
+        try:
+            abs_path = os.path.join(project_root, result.filepath)
+            if os.path.isfile(abs_path) and result.full_code_block:
+                with open(abs_path, "r", encoding="utf-8", errors="replace") as handle:
+                    primary_diff = _compute_diff(handle.read(), result.full_code_block, result.filepath)
+        except Exception:
+            primary_diff = None
+
+    additional = []
+    for fix in result.additional_fixes:
+        fix_diff = None
+        if project_root and fix.filepath:
+            abs_fix = os.path.join(project_root, fix.filepath)
+            if os.path.isfile(abs_fix) and fix.full_code_block:
+                try:
+                    with open(abs_fix, "r", encoding="utf-8", errors="replace") as handle:
+                        fix_diff = _compute_diff(handle.read(), fix.full_code_block, fix.filepath)
+                except Exception:
+                    fix_diff = None
+        additional.append(AdditionalFixResponse(
+            filepath=fix.filepath,
+            code=fix.full_code_block,
+            explanation=fix.explanation,
+            diff=fix_diff,
+        ))
+
+    return AnalyzeResponse(
+        explanation=result.explanation,
+        code=result.full_code_block,
+        filepath=result.filepath,
+        diff=primary_diff,
+        root_cause_file=result.root_cause_file,
+        root_cause_explanation=result.root_cause_explanation,
+        additional_fixes=additional,
+        model_used=result.model_used,
+        files_read=result.files_read,
+        files_read_sources=result.files_read_sources,
+    )
 
 
 def _get_github_oauth_config() -> tuple[str, str, str]:
@@ -477,11 +533,11 @@ async def github_analyze(request: GithubAnalyzeRequest, http_request: Request):
         last_exc: Exception | None = None
         for attempt in range(3):
             try:
-                result = analyze_error(
-                    request.log,
-                    context,
-                    include_upstream=request.include_upstream,
+                result = _build_analysis_response(
+                    log=request.log,
+                    context=context,
                     project_root=repo_path,
+                    include_upstream=request.include_upstream,
                 )
                 break
             except Exception as exc:
@@ -493,46 +549,7 @@ async def github_analyze(request: GithubAnalyzeRequest, http_request: Request):
                 raise
         else:
             raise last_exc if last_exc else RuntimeError("Analysis failed")
-        primary_diff = None
-        if result.filepath and repo_path:
-            try:
-                abs_path = os.path.join(repo_path, result.filepath)
-                if os.path.isfile(abs_path) and result.full_code_block:
-                    with open(abs_path, "r", encoding="utf-8", errors="replace") as handle:
-                        primary_diff = _compute_diff(handle.read(), result.full_code_block, result.filepath)
-            except Exception:
-                primary_diff = None
-
-        additional = []
-        for fix in result.additional_fixes:
-            fix_diff = None
-            if repo_path and fix.filepath:
-                abs_fix = os.path.join(repo_path, fix.filepath)
-                if os.path.isfile(abs_fix) and fix.full_code_block:
-                    try:
-                        with open(abs_fix, "r", encoding="utf-8", errors="replace") as handle:
-                            fix_diff = _compute_diff(handle.read(), fix.full_code_block, fix.filepath)
-                    except Exception:
-                        fix_diff = None
-            additional.append(AdditionalFixResponse(
-                filepath=fix.filepath,
-                code=fix.full_code_block,
-                explanation=fix.explanation,
-                diff=fix_diff,
-            ))
-
-        return AnalyzeResponse(
-            explanation=result.explanation,
-            code=result.full_code_block,
-            filepath=result.filepath,
-            diff=primary_diff,
-            root_cause_file=result.root_cause_file,
-            root_cause_explanation=result.root_cause_explanation,
-            additional_fixes=additional,
-            model_used=result.model_used,
-            files_read=result.files_read,
-            files_read_sources=result.files_read_sources,
-        )
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -540,6 +557,148 @@ async def github_analyze(request: GithubAnalyzeRequest, http_request: Request):
         if "503" in msg or "UNAVAILABLE" in msg or "overloaded" in msg.lower():
             raise HTTPException(status_code=503, detail="Model overloaded. Please try again later.")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {msg}")
+
+
+@app.post("/analyze/stream")
+async def analyze_stream(request: AnalyzeRequest, http_request: Request):
+    async def event_gen():
+        yield "event: status\ndata: Scanning project...\n\n"
+        try:
+            required_api_key = os.environ.get("ROMA_API_KEY")
+            if required_api_key:
+                provided_key = http_request.headers.get("X-ROMA-API-KEY", "")
+                if provided_key != required_api_key:
+                    raise HTTPException(status_code=401, detail="Unauthorized")
+
+            max_log_bytes = int(os.environ.get("ROMA_MAX_LOG_BYTES", "200000"))
+            if request.log and len(request.log.encode("utf-8")) > max_log_bytes:
+                raise HTTPException(status_code=413, detail="Log too large")
+
+            allow_project_root = os.environ.get("ROMA_ALLOW_PROJECT_ROOT", "").lower() in {"1", "true", "yes"}
+            if request.project_root and not allow_project_root:
+                raise HTTPException(
+                    status_code=400,
+                    detail="project_root is disabled on this server",
+                )
+
+            project_root = request.project_root if allow_project_root else None
+
+            context = request.context
+            if not context and project_root:
+                try:
+                    from roma_debug.tracing.context_builder import ContextBuilder
+
+                    language_hint = None
+                    if request.language:
+                        language_map = {
+                            "python": Language.PYTHON,
+                            "javascript": Language.JAVASCRIPT,
+                            "typescript": Language.TYPESCRIPT,
+                            "go": Language.GO,
+                            "rust": Language.RUST,
+                            "java": Language.JAVA,
+                        }
+                        language_hint = language_map.get(request.language.lower())
+
+                    builder = ContextBuilder(project_root=project_root)
+                    analysis_ctx = builder.build_analysis_context(
+                        request.log,
+                        language_hint=language_hint,
+                    )
+                    context = builder.get_context_for_prompt(
+                        analysis_ctx,
+                        include_upstream=request.include_upstream,
+                    )
+                except Exception as e:
+                    logger.warning(f"Context building failed, using basic context: {e}")
+
+            yield "event: status\ndata: Analyzing with Gemini...\n\n"
+            response = _build_analysis_response(
+                log=request.log,
+                context=context,
+                project_root=project_root,
+                include_upstream=request.include_upstream,
+            )
+            payload = json.dumps(response.dict())
+            yield f"event: done\ndata: {payload}\n\n"
+        except HTTPException as e:
+            yield f"event: error\ndata: {json.dumps({'detail': e.detail, 'status': e.status_code})}\n\n"
+        except Exception as e:
+            msg = str(e)
+            if "503" in msg or "UNAVAILABLE" in msg or "overloaded" in msg.lower():
+                yield f"event: error\ndata: {json.dumps({'detail': 'Model overloaded. Please try again later.', 'status': 503})}\n\n"
+            else:
+                yield f"event: error\ndata: {json.dumps({'detail': f'Analysis failed: {msg}', 'status': 500})}\n\n"
+
+    return StreamingResponse(event_gen(), media_type="text/event-stream")
+
+
+@app.post("/github/analyze/stream")
+async def github_analyze_stream(request: GithubAnalyzeRequest, http_request: Request):
+    async def event_gen():
+        yield "event: status\ndata: Scanning repo...\n\n"
+        try:
+            required_api_key = os.environ.get("ROMA_API_KEY")
+            if required_api_key:
+                provided_key = http_request.headers.get("X-ROMA-API-KEY", "")
+                if provided_key != required_api_key:
+                    raise HTTPException(status_code=401, detail="Unauthorized")
+
+            max_log_bytes = int(os.environ.get("ROMA_MAX_LOG_BYTES", "200000"))
+            if request.log and len(request.log.encode("utf-8")) > max_log_bytes:
+                raise HTTPException(status_code=413, detail="Log too large")
+
+            session_id = http_request.headers.get("X-ROMA-GH-SESSION", "")
+            _ = _get_session_token(session_id)
+            repo = _get_repo(request.repo_id, session_id)
+            repo_path = _safe_repo_path(str(repo.get("repo_path")))
+
+            language_hint = None
+            if request.language:
+                language_map = {
+                    "python": Language.PYTHON,
+                    "javascript": Language.JAVASCRIPT,
+                    "typescript": Language.TYPESCRIPT,
+                    "go": Language.GO,
+                    "rust": Language.RUST,
+                    "java": Language.JAVA,
+                }
+                language_hint = language_map.get(request.language.lower())
+
+            try:
+                from roma_debug.tracing.context_builder import ContextBuilder
+
+                builder = ContextBuilder(project_root=repo_path)
+                analysis_ctx = builder.build_analysis_context(
+                    request.log,
+                    language_hint=language_hint,
+                )
+                context = builder.get_context_for_prompt(
+                    analysis_ctx,
+                    include_upstream=request.include_upstream,
+                )
+            except Exception:
+                context = ""
+
+            yield "event: status\ndata: Analyzing with Gemini...\n\n"
+            response = _build_analysis_response(
+                log=request.log,
+                context=context,
+                project_root=repo_path,
+                include_upstream=request.include_upstream,
+            )
+            payload = json.dumps(response.dict())
+            yield f"event: done\ndata: {payload}\n\n"
+        except HTTPException as e:
+            yield f"event: error\ndata: {json.dumps({'detail': e.detail, 'status': e.status_code})}\n\n"
+        except Exception as e:
+            msg = str(e)
+            if "503" in msg or "UNAVAILABLE" in msg or "overloaded" in msg.lower():
+                yield f"event: error\ndata: {json.dumps({'detail': 'Model overloaded. Please try again later.', 'status': 503})}\n\n"
+            else:
+                yield f"event: error\ndata: {json.dumps({'detail': f'Analysis failed: {msg}', 'status': 500})}\n\n"
+
+    return StreamingResponse(event_gen(), media_type="text/event-stream")
 
 
 @app.post("/github/apply")
@@ -742,52 +901,11 @@ async def analyze(request: AnalyzeRequest, http_request: Request):
             except Exception as e:
                 logger.warning(f"Context building failed, using basic context: {e}")
 
-        result = analyze_error(
-            request.log,
-            context,
-            include_upstream=request.include_upstream,
+        return _build_analysis_response(
+            log=request.log,
+            context=context,
             project_root=project_root,
-        )
-
-        primary_diff = None
-        if result.filepath and project_root:
-            try:
-                abs_path = os.path.join(project_root, result.filepath)
-                if os.path.isfile(abs_path) and result.full_code_block:
-                    with open(abs_path, "r", encoding="utf-8", errors="replace") as handle:
-                        primary_diff = _compute_diff(handle.read(), result.full_code_block, result.filepath)
-            except Exception:
-                primary_diff = None
-
-        additional = []
-        for fix in result.additional_fixes:
-            fix_diff = None
-            if project_root and fix.filepath:
-                abs_fix = os.path.join(project_root, fix.filepath)
-                if os.path.isfile(abs_fix) and fix.full_code_block:
-                    try:
-                        with open(abs_fix, "r", encoding="utf-8", errors="replace") as handle:
-                            fix_diff = _compute_diff(handle.read(), fix.full_code_block, fix.filepath)
-                    except Exception:
-                        fix_diff = None
-            additional.append(AdditionalFixResponse(
-                filepath=fix.filepath,
-                code=fix.full_code_block,
-                explanation=fix.explanation,
-                diff=fix_diff,
-            ))
-
-        return AnalyzeResponse(
-            explanation=result.explanation,
-            code=result.full_code_block,
-            filepath=result.filepath,
-            diff=primary_diff,
-            root_cause_file=result.root_cause_file,
-            root_cause_explanation=result.root_cause_explanation,
-            additional_fixes=additional,
-            model_used=result.model_used,
-            files_read=result.files_read,
-            files_read_sources=result.files_read_sources,
+            include_upstream=request.include_upstream,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

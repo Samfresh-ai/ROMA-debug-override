@@ -94,6 +94,53 @@ export async function analyzeError(log: string, context?: string): Promise<Analy
   return response.json();
 }
 
+export async function analyzeErrorStream(
+  log: string,
+  context: string | undefined,
+  onStatus: (msg: string) => void,
+  onDone: (data: AnalyzeResponse) => void,
+  onError: (msg: string) => void,
+) {
+  const response = await fetch(`${API_BASE_URL}/analyze/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ log, context: context || '' }),
+  });
+
+  if (!response.body) {
+    onError('No response body for stream');
+    return;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split('\n\n');
+    buffer = parts.pop() || '';
+
+    for (const part of parts) {
+      const lines = part.split('\n');
+      let event = '';
+      let data = '';
+      for (const line of lines) {
+        if (line.startsWith('event:')) event = line.replace('event:', '').trim();
+        if (line.startsWith('data:')) data = line.replace('data:', '').trim();
+      }
+      if (event === 'status') onStatus(data);
+      if (event === 'done') onDone(JSON.parse(data));
+      if (event === 'error') {
+        const err = JSON.parse(data);
+        onError(err.detail || 'Streaming error');
+      }
+    }
+  }
+}
+
 export async function githubOAuthStart(): Promise<GithubOAuthStartResponse> {
   const response = await fetch(`${API_BASE_URL}/github/oauth/start`);
   if (!response.ok) {
@@ -186,6 +233,57 @@ export async function githubAnalyzeRepo(
     throw new Error(error.detail || 'Failed to analyze repo');
   }
   return response.json();
+}
+
+export async function githubAnalyzeRepoStream(
+  repoId: string,
+  sessionId: string,
+  log: string,
+  onStatus: (msg: string) => void,
+  onDone: (data: AnalyzeResponse) => void,
+  onError: (msg: string) => void,
+) {
+  const response = await fetch(`${API_BASE_URL}/github/analyze/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-ROMA-GH-SESSION': sessionId,
+    },
+    body: JSON.stringify({ repo_id: repoId, log }),
+  });
+
+  if (!response.body) {
+    onError('No response body for stream');
+    return;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split('\n\n');
+    buffer = parts.pop() || '';
+
+    for (const part of parts) {
+      const lines = part.split('\n');
+      let event = '';
+      let data = '';
+      for (const line of lines) {
+        if (line.startsWith('event:')) event = line.replace('event:', '').trim();
+        if (line.startsWith('data:')) data = line.replace('data:', '').trim();
+      }
+      if (event === 'status') onStatus(data);
+      if (event === 'done') onDone(JSON.parse(data));
+      if (event === 'error') {
+        const err = JSON.parse(data);
+        onError(err.detail || 'Streaming error');
+      }
+    }
+  }
 }
 
 export async function githubApplyPatch(
