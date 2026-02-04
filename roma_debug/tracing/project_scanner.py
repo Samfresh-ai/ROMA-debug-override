@@ -416,11 +416,14 @@ class ProjectScanner:
         # Extract potential filenames and keywords from error
         keywords = self._extract_keywords(error_message)
 
+        if not keywords:
+            return []
+
         scored_files: List[tuple] = []
 
         for pf in self._project_info.source_files:
             score = self._score_relevance(pf, keywords, error_message)
-            if score > 0:
+            if score >= 1.0:
                 scored_files.append((score, pf))
 
         # Sort by score descending
@@ -476,12 +479,15 @@ class ProjectScanner:
 
     def _score_relevance(self, pf: ProjectFile, keywords: Set[str], error_message: str) -> float:
         """Score how relevant a file is to the error."""
+        if not keywords:
+            return 0.0
+
         score = 0.0
         path_lower = pf.path.lower()
         filename_lower = pf.filename.lower()
 
         # Entry points get a boost
-        if pf.is_entry_point:
+        if pf.is_entry_point and keywords:
             score += 2.0
 
         # Direct filename match

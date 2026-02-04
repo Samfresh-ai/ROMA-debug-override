@@ -6,54 +6,12 @@ import json
 
 from roma_debug.core.engine import (
     analyze_error,
-    analyze_error_v2,
-    _build_prompt,
-    _build_prompt_v2,
     _parse_json_response,
     _normalize_filepath,
     _determine_action_type,
     FixResult,
-    FixResultV2,
     ActionType,
 )
-
-
-class TestBuildPrompt:
-    """Tests for prompt building."""
-
-    def test_builds_prompt_with_log_only(self):
-        """Test prompt building with just error log."""
-        log = "ValueError: test error"
-        context = ""
-
-        prompt = _build_prompt(log, context)
-
-        assert "## USER INPUT" in prompt
-        assert "ValueError: test error" in prompt
-        assert "## SOURCE CONTEXT" not in prompt
-
-    def test_builds_prompt_with_context(self):
-        """Test prompt building with log and context."""
-        log = "ValueError: test error"
-        context = "def func():\n    pass"
-
-        prompt = _build_prompt(log, context)
-
-        assert "## USER INPUT" in prompt
-        assert "ValueError: test error" in prompt
-        assert "## SOURCE CONTEXT" in prompt
-        assert "def func():" in prompt
-
-    def test_v2_prompt(self):
-        """Test V2 prompt building."""
-        log = "ValueError: test"
-        context = "## PRIMARY ERROR\nsome context"
-
-        prompt = _build_prompt_v2(log, context)
-
-        assert "## USER INPUT" in prompt
-        assert "QUESTION" in prompt  # Should mention QUESTION/ANSWER logic
-        assert "PATCH" in prompt  # Should mention PATCH mode
 
 
 class TestParseJsonResponse:
@@ -197,96 +155,30 @@ class TestFixResult:
         assert answer_result.is_patch is False
 
 
-class TestFixResultV2:
-    """Tests for FixResultV2 class."""
-
-    def test_has_root_cause(self):
-        """Test has_root_cause property."""
-        result = FixResultV2(
-            filepath="main.py",
-            full_code_block="code",
-            explanation="fix",
-            raw_response="{}",
-            model_used="gemini",
-            root_cause_file="utils.py",
-            root_cause_explanation="The bug is actually here",
-        )
-
-        assert result.has_root_cause is True
-
-    def test_no_root_cause_when_same_file(self):
-        """Test has_root_cause is False when root_cause_file matches filepath."""
-        result = FixResultV2(
-            filepath="main.py",
-            full_code_block="code",
-            explanation="fix",
-            raw_response="{}",
-            model_used="gemini",
-            root_cause_file="main.py",
-        )
-
-        assert result.has_root_cause is False
-
-    def test_all_files_to_fix(self):
-        """Test all_files_to_fix property."""
-        from roma_debug.core.engine import AdditionalFix
-
-        result = FixResultV2(
-            filepath="main.py",
-            full_code_block="code",
-            explanation="fix",
-            raw_response="{}",
-            model_used="gemini",
-            root_cause_file="utils.py",
-            additional_fixes=[
-                AdditionalFix(filepath="helpers.py", full_code_block="", explanation=""),
-            ],
-        )
-
-        files = result.all_files_to_fix
-        assert "main.py" in files
-        assert "utils.py" in files
-        assert "helpers.py" in files
-
-    def test_v2_to_dict(self):
-        """Test FixResultV2 to_dict includes V2 fields."""
-        from roma_debug.core.engine import AdditionalFix
-
-        result = FixResultV2(
-            filepath="main.py",
-            full_code_block="code",
-            explanation="fix",
-            raw_response="{}",
-            model_used="gemini",
-            root_cause_file="utils.py",
-            root_cause_explanation="Root cause here",
-            additional_fixes=[
-                AdditionalFix(filepath="other.py", full_code_block="more code", explanation="also fix"),
-            ],
-        )
-
-        d = result.to_dict()
-
-        assert d["root_cause_file"] == "utils.py"
-        assert d["root_cause_explanation"] == "Root cause here"
-        assert len(d["additional_fixes"]) == 1
-        assert d["additional_fixes"][0]["filepath"] == "other.py"
-
-
 class TestAnalyzeError:
     """Tests for analyze_error function with mocked API."""
 
+    @patch('roma_debug.core.engine._read_requested_files')
     @patch('roma_debug.core.engine._get_client')
-    def test_returns_fix_result(self, mock_get_client):
+    def test_returns_fix_result(self, mock_get_client, mock_read_files):
         """Test that analyze_error returns a FixResult."""
+        mock_read_files.return_value = ([("test.py", "print('x')")], [])
         mock_client = MagicMock()
-        mock_response = MagicMock()
-        mock_response.text = json.dumps({
+        mock_response_investigate = MagicMock()
+        mock_response_investigate.text = json.dumps({
+            "action_type": "INVESTIGATE",
+            "files_to_read": ["test.py"],
+        })
+        mock_response_patch = MagicMock()
+        mock_response_patch.text = json.dumps({
             "filepath": "test.py",
             "full_code_block": "def fixed(): pass",
             "explanation": "Fixed the function"
         })
-        mock_client.models.generate_content.return_value = mock_response
+        mock_client.models.generate_content.side_effect = [
+            mock_response_investigate,
+            mock_response_patch,
+        ]
         mock_get_client.return_value = mock_client
 
         result = analyze_error("ValueError: test", "def broken(): pass")
@@ -295,89 +187,29 @@ class TestAnalyzeError:
         assert result.filepath == "test.py"
         assert result.full_code_block == "def fixed(): pass"
 
+    @patch('roma_debug.core.engine._read_requested_files')
     @patch('roma_debug.core.engine._get_client')
-    def test_handles_null_filepath(self, mock_get_client):
+    def test_handles_null_filepath(self, mock_get_client, mock_read_files):
         """Test handling of null filepath in response."""
+        mock_read_files.return_value = ([("test.py", "print('x')")], [])
         mock_client = MagicMock()
-        mock_response = MagicMock()
-        mock_response.text = json.dumps({
+        mock_response_investigate = MagicMock()
+        mock_response_investigate.text = json.dumps({
+            "action_type": "INVESTIGATE",
+            "files_to_read": ["test.py"],
+        })
+        mock_response_patch = MagicMock()
+        mock_response_patch.text = json.dumps({
             "filepath": None,
             "full_code_block": "general advice",
             "explanation": "This is a config error"
         })
-        mock_client.models.generate_content.return_value = mock_response
+        mock_client.models.generate_content.side_effect = [
+            mock_response_investigate,
+            mock_response_patch,
+        ]
         mock_get_client.return_value = mock_client
 
         result = analyze_error("400 API key invalid", "")
 
         assert result.filepath is None
-
-
-class TestAnalyzeErrorV2:
-    """Tests for analyze_error_v2 function."""
-
-    @patch('roma_debug.core.engine._get_client')
-    def test_returns_v2_result(self, mock_get_client):
-        """Test that analyze_error_v2 returns FixResultV2."""
-        mock_client = MagicMock()
-        mock_response = MagicMock()
-        mock_response.text = json.dumps({
-            "filepath": "main.py",
-            "full_code_block": "fixed code",
-            "explanation": "Fixed",
-            "root_cause_file": "utils.py",
-            "root_cause_explanation": "The bug was here",
-            "additional_fixes": []
-        })
-        mock_client.models.generate_content.return_value = mock_response
-        mock_get_client.return_value = mock_client
-
-        result = analyze_error_v2("Error trace", "context")
-
-        assert isinstance(result, FixResultV2)
-        assert result.root_cause_file == "utils.py"
-
-    @patch('roma_debug.core.engine._get_client')
-    def test_parses_additional_fixes(self, mock_get_client):
-        """Test parsing of additional_fixes in V2 response."""
-        mock_client = MagicMock()
-        mock_response = MagicMock()
-        mock_response.text = json.dumps({
-            "filepath": "main.py",
-            "full_code_block": "code1",
-            "explanation": "Fix 1",
-            "additional_fixes": [
-                {"filepath": "utils.py", "full_code_block": "code2", "explanation": "Fix 2"},
-                {"filepath": "helpers.py", "full_code_block": "code3", "explanation": "Fix 3"},
-            ]
-        })
-        mock_client.models.generate_content.return_value = mock_response
-        mock_get_client.return_value = mock_client
-
-        result = analyze_error_v2("Error", "context")
-
-        assert len(result.additional_fixes) == 2
-        assert result.additional_fixes[0].filepath == "utils.py"
-        assert result.additional_fixes[1].filepath == "helpers.py"
-
-    @patch('roma_debug.core.engine._get_client')
-    def test_answer_mode_v2(self, mock_get_client):
-        """Test V2 ANSWER mode response."""
-        mock_client = MagicMock()
-        mock_response = MagicMock()
-        mock_response.text = json.dumps({
-            "action_type": "ANSWER",
-            "filepath": None,
-            "full_code_block": "",
-            "explanation": "There are 5 files in the src folder."
-        })
-        mock_client.models.generate_content.return_value = mock_response
-        mock_get_client.return_value = mock_client
-
-        result = analyze_error_v2("How many files in src?", "context")
-
-        assert result.is_answer_only is True
-        assert result.filepath is None
-        assert result.full_code_block == ""
-        assert "5 files" in result.explanation
-        assert result.all_files_to_fix == []  # No files to fix in ANSWER mode

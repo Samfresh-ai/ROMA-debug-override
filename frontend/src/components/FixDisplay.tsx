@@ -9,12 +9,29 @@ interface FixDisplayProps {
   code: string;
   explanation: string;
   filepath: string | null;
+  diff?: string;
+  additionalFixes?: Array<{
+    filepath: string;
+    code: string;
+    explanation: string;
+    diff?: string | null;
+  }>;
+  filesRead?: string[];
+  filesReadSources?: Record<string, string>;
 }
 
 /**
  * Component to display the code fix with syntax highlighting
  */
-export function FixDisplay({ code, explanation, filepath }: FixDisplayProps) {
+export function FixDisplay({
+  code,
+  explanation,
+  filepath,
+  diff,
+  additionalFixes,
+  filesRead,
+  filesReadSources,
+}: FixDisplayProps) {
   const codeRef = useRef<HTMLElement>(null);
   const [copied, setCopied] = useState(false);
 
@@ -47,6 +64,31 @@ export function FixDisplay({ code, explanation, filepath }: FixDisplayProps) {
 
   const language = detectLanguage(code);
 
+  const renderDiff = (diffText?: string | null) => {
+    if (!diffText) return null;
+    const lines = diffText.split('\n').filter((line) => !line.startsWith('+++') && !line.startsWith('---'));
+    return (
+      <pre className="text-sm font-mono whitespace-pre-wrap">
+        {lines.map((line, idx) => {
+          let className = 'text-gray-300';
+          if (line.startsWith('+')) className = 'text-green-400';
+          if (line.startsWith('-')) className = 'text-red-400';
+          if (line.startsWith('@@')) className = 'text-blue-300';
+          return (
+            <div key={`${idx}-${line}`} className={className}>
+              {line}
+            </div>
+          );
+        })}
+      </pre>
+    );
+  };
+
+  const allFixes = [
+    filepath ? { filepath, diff, code } : null,
+    ...(additionalFixes || []).map((f) => ({ filepath: f.filepath, diff: f.diff, code: f.code })),
+  ].filter(Boolean) as Array<{ filepath: string; diff?: string | null; code: string }>;
+
   return (
     <div className="space-y-4">
       {/* Explanation Section */}
@@ -63,14 +105,41 @@ export function FixDisplay({ code, explanation, filepath }: FixDisplayProps) {
         </div>
       </div>
 
-      {/* Filepath Section */}
-      {filepath && (
-        <div className="flex items-center text-sm text-gray-600 bg-gray-100 rounded-lg px-4 py-2">
-          <svg className="w-4 h-4 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-          <span className="font-mono">{filepath}</span>
+      {/* Files Section */}
+      {allFixes.length > 0 && (
+        <div className="space-y-4">
+          {allFixes.map((fix) => (
+            <div key={fix.filepath} className="bg-gray-900 rounded-lg overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-2 bg-gray-800 border-b border-gray-700">
+                <span className="text-sm text-gray-300 font-medium">{fix.filepath}</span>
+                <span className="text-xs text-gray-500">Diff</span>
+              </div>
+              <div className="p-4 overflow-x-auto">
+                {fix.diff ? renderDiff(fix.diff) : (
+                  <pre className="text-sm font-mono whitespace-pre-wrap text-gray-300">
+                    {fix.code}
+                  </pre>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Files Read Audit */}
+      {filesRead && filesRead.length > 0 && (
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-700">
+          <div className="font-medium text-gray-800 mb-2">Files Read</div>
+          <ul className="space-y-1 font-mono">
+            {filesRead.map((path) => (
+              <li key={path}>
+                {path}
+                {filesReadSources?.[path] ? (
+                  <span className="ml-2 text-gray-500">({filesReadSources[path]})</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -85,8 +154,8 @@ export function FixDisplay({ code, explanation, filepath }: FixDisplayProps) {
         </div>
       )}
 
-      {/* Code Section */}
-      {code && (
+      {/* Code Section (fallback) */}
+      {code && allFixes.length === 0 && (
         <div className="bg-gray-900 rounded-lg overflow-hidden">
           <div className="flex items-center justify-between px-4 py-2 bg-gray-800 border-b border-gray-700">
             <span className="text-sm text-gray-400 font-medium">

@@ -14,6 +14,14 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
+      '/info': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+      '/github': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
     },
   },
 })
