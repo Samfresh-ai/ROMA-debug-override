@@ -44,7 +44,7 @@ allowed_origin_regex = os.environ.get("ROMA_ALLOWED_ORIGIN_REGEX", "").strip() o
 if allowed_origins_env == "*":
     allowed_origins = ["*"]
 else:
-    allowed_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
+    allowed_origins = [o.strip().rstrip("/") for o in allowed_origins_env.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
@@ -849,3 +849,6 @@ async def startup_event():
     logger.info(f"Server started. Gemini API Key status: [{status}]")
     logger.info(f"ROMA Debug API v{__version__} ready")
     logger.info("Endpoints: /analyze, /health, /info")
+    logger.info(f"CORS origins: {allowed_origins}")
+    if allowed_origin_regex:
+        logger.info(f"CORS origin regex: {allowed_origin_regex}")
