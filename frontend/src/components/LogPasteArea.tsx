@@ -46,13 +46,13 @@ TypeError: object of type 'NoneType' has no len()`);
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
         <div className="flex justify-between items-center mb-2">
-          <label htmlFor="error-log" className="block text-sm font-medium text-gray-700">
+          <label htmlFor="error-log" className="block text-sm font-semibold text-slate-700">
             Error Log
           </label>
           <button
             type="button"
             onClick={loadExample}
-            className="text-sm text-roma-primary hover:text-blue-700"
+            className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 hover:text-slate-700"
           >
             Load Example
           </button>
@@ -62,38 +62,34 @@ TypeError: object of type 'NoneType' has no len()`);
           value={log}
           onChange={(e) => setLog(e.target.value)}
           placeholder="Paste your error log or traceback here..."
-          className="w-full h-64 px-4 py-3 border border-gray-300 rounded-lg shadow-sm
-                     focus:ring-2 focus:ring-roma-primary focus:border-roma-primary
+          className="w-full h-64 px-4 py-3 border border-slate-200 rounded-xl shadow-sm
+                     focus:ring-2 focus:ring-blue-500 focus:border-blue-500
                      font-mono text-sm resize-none
-                     placeholder:text-gray-400"
+                     placeholder:text-slate-400 bg-white"
           disabled={isLoading}
         />
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex space-x-2">
           <button
             type="button"
             onClick={handlePaste}
             disabled={isLoading}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white
-                       border border-gray-300 rounded-lg shadow-sm
-                       hover:bg-gray-50 focus:outline-none focus:ring-2
-                       focus:ring-roma-primary focus:ring-offset-2
-                       disabled:opacity-50 disabled:cursor-not-allowed
+            className="px-4 py-2 text-xs font-semibold uppercase tracking-[0.15em] text-slate-700 bg-white
+                       border border-slate-200 rounded-full shadow-sm
+                       hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed
                        transition-colors"
           >
-            Paste from Clipboard
+            Paste
           </button>
           <button
             type="button"
             onClick={handleClear}
             disabled={isLoading || !log}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white
-                       border border-gray-300 rounded-lg shadow-sm
-                       hover:bg-gray-50 focus:outline-none focus:ring-2
-                       focus:ring-roma-primary focus:ring-offset-2
-                       disabled:opacity-50 disabled:cursor-not-allowed
+            className="px-4 py-2 text-xs font-semibold uppercase tracking-[0.15em] text-slate-700 bg-white
+                       border border-slate-200 rounded-full shadow-sm
+                       hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed
                        transition-colors"
           >
             Clear
@@ -103,11 +99,9 @@ TypeError: object of type 'NoneType' has no len()`);
         <button
           type="submit"
           disabled={isLoading || !log.trim()}
-          className="px-6 py-2 text-sm font-medium text-white bg-roma-primary
-                     rounded-lg shadow-sm hover:bg-blue-600
-                     focus:outline-none focus:ring-2 focus:ring-roma-primary
-                     focus:ring-offset-2 disabled:opacity-50
-                     disabled:cursor-not-allowed transition-colors"
+          className="px-6 py-2 text-sm font-semibold text-white bg-blue-600
+                     rounded-full shadow-sm hover:bg-blue-700
+                     disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {isLoading ? (
             <span className="flex items-center">

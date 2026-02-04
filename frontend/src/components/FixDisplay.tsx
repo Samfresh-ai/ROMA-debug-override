@@ -92,14 +92,14 @@ export function FixDisplay({
   return (
     <div className="space-y-4">
       {/* Explanation Section */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
         <div className="flex items-start">
           <svg className="w-5 h-5 text-blue-500 mr-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                   d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           <div>
-            <h3 className="font-medium text-blue-800">Explanation</h3>
+            <h3 className="font-semibold text-blue-800">Explanation</h3>
             <p className="mt-1 text-blue-700">{explanation}</p>
           </div>
         </div>
@@ -109,14 +109,14 @@ export function FixDisplay({
       {allFixes.length > 0 && (
         <div className="space-y-4">
           {allFixes.map((fix) => (
-            <div key={fix.filepath} className="bg-gray-900 rounded-lg overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-2 bg-gray-800 border-b border-gray-700">
-                <span className="text-sm text-gray-300 font-medium">{fix.filepath}</span>
-                <span className="text-xs text-gray-500">Diff</span>
+            <div key={fix.filepath} className="bg-slate-950 rounded-2xl overflow-hidden border border-slate-800">
+              <div className="flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800">
+                <span className="text-sm text-slate-200 font-semibold">{fix.filepath}</span>
+                <span className="text-xs text-slate-500 uppercase tracking-[0.2em]">Diff</span>
               </div>
               <div className="p-4 overflow-x-auto">
                 {fix.diff ? renderDiff(fix.diff) : (
-                  <pre className="text-sm font-mono whitespace-pre-wrap text-gray-300">
+                  <pre className="text-sm font-mono whitespace-pre-wrap text-slate-300">
                     {fix.code}
                   </pre>
                 )}
@@ -145,7 +145,7 @@ export function FixDisplay({
 
       {/* No Filepath Warning */}
       {!filepath && (
-        <div className="flex items-center text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">
+        <div className="flex items-center text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2">
           <svg className="w-4 h-4 mr-2 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                   d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />

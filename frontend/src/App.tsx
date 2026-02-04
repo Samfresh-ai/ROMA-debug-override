@@ -188,24 +188,24 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen flex flex-col">
       <Header />
 
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 lg:px-8 pb-16">
         <div className="space-y-8">
           {/* GitHub Repo Section */}
-          <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-4">
-            <div className="flex items-center justify-between">
+          <section className="rounded-2xl border border-slate-200 bg-white/80 shadow-lg shadow-slate-200/40 backdrop-blur p-6 space-y-4">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
               <div>
-                <h2 className="text-lg font-semibold text-gray-800">GitHub Repo</h2>
-                <p className="text-sm text-gray-500">Connect GitHub to analyze a private repo.</p>
+                <h2 className="text-lg font-semibold text-slate-900">GitHub Repo Mode</h2>
+                <p className="text-sm text-slate-600">Connect, clone, analyze, then open a PR with one click.</p>
               </div>
               <div className="flex items-center space-x-2">
                 <button
                   type="button"
                   onClick={handleConnectGithub}
-                  className="px-4 py-2 text-sm font-medium text-white bg-gray-900
-                             rounded-lg hover:bg-gray-800 transition-colors"
+                  className="px-4 py-2 text-sm font-semibold text-white bg-slate-900
+                             rounded-full hover:bg-slate-800 transition-colors"
                 >
                   {githubSessionId ? 'GitHub Connected' : 'Connect GitHub'}
                 </button>
@@ -213,8 +213,8 @@ function App() {
                   <button
                     type="button"
                     onClick={handleDisconnectGithub}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100
-                               rounded-lg hover:bg-gray-200 transition-colors"
+                    className="px-4 py-2 text-sm font-semibold text-slate-700 bg-slate-100
+                               rounded-full hover:bg-slate-200 transition-colors"
                   >
                     Disconnect
                   </button>
@@ -226,7 +226,7 @@ function App() {
               <select
                 value={repoUrl}
                 onChange={(e) => setRepoUrl(e.target.value)}
-                className="sm:col-span-2 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                className="sm:col-span-2 px-4 py-3 border border-slate-200 rounded-xl text-sm bg-white"
               >
                 <option value="">Select a repo...</option>
                 {repos.map((r) => (
@@ -240,26 +240,26 @@ function App() {
                 value={repoRef}
                 onChange={(e) => setRepoRef(e.target.value)}
                 placeholder="branch or tag (optional)"
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                className="px-4 py-3 border border-slate-200 rounded-xl text-sm bg-white"
               />
             </div>
 
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-gray-500">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="text-sm text-slate-500">
                 {repoId ? `Repo ready: ${repoId}` : 'Repo not cloned yet'}
               </div>
               <button
                 type="button"
                 onClick={handleCloneRepo}
                 disabled={!githubSessionId || isCloning}
-                className="px-4 py-2 text-sm font-medium text-white bg-roma-primary
-                           rounded-lg hover:bg-blue-600 disabled:opacity-50"
+                className="px-4 py-2 text-sm font-semibold text-white bg-blue-600
+                           rounded-full hover:bg-blue-700 disabled:opacity-50"
               >
                 {isCloning ? 'Cloning...' : 'Clone Repo'}
               </button>
             </div>
 
-            <label className="flex items-center space-x-2 text-sm text-gray-700">
+            <label className="flex items-center space-x-2 text-sm text-slate-700">
               <input
                 type="checkbox"
                 checked={useRepoAnalysis}
@@ -270,29 +270,29 @@ function App() {
           </section>
 
           {/* Input Section */}
-          <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <section className="rounded-2xl border border-slate-200 bg-white/80 shadow-lg shadow-slate-200/40 backdrop-blur p-6">
             <LogPasteArea onSubmit={handleSubmit} isLoading={isLoading} />
           </section>
 
           {/* Error Display */}
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
               <div className="flex items-center">
-                <svg className="w-5 h-5 text-red-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 text-rose-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                         d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <span className="text-red-700 font-medium">Error</span>
+                <span className="text-rose-700 font-medium">Error</span>
               </div>
-              <p className="mt-2 text-red-600">{error}</p>
+              <p className="mt-2 text-rose-600">{error}</p>
             </div>
           )}
 
           {/* Result Section */}
           {result && (
-            <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-                <svg className="w-5 h-5 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <section className="rounded-2xl border border-slate-200 bg-white/80 shadow-lg shadow-slate-200/40 backdrop-blur p-6">
+              <h2 className="text-lg font-semibold text-slate-900 mb-4 flex items-center">
+                <svg className="w-5 h-5 mr-2 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                         d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
@@ -310,10 +310,10 @@ function App() {
 
               {useRepoAnalysis && pendingPatch?.filepath && (
                 <div className="mt-6 space-y-3">
-                  <div className="text-sm text-gray-600">
+                  <div className="text-sm text-slate-600">
                     Ready to apply {1 + (pendingPatch.additional_fixes?.length || 0)} patch(es) and open a PR?
                   </div>
-                  <div className="text-sm text-gray-500">
+                  <div className="text-sm text-slate-500">
                     Files: {[pendingPatch.filepath, ...(pendingPatch.additional_fixes || []).map((f) => f.filepath)].join(', ')}
                     {defaultBranch ? ` | Base: ${defaultBranch}` : ''}
                   </div>
@@ -323,40 +323,40 @@ function App() {
                       value={branchName}
                       onChange={(e) => setBranchName(e.target.value)}
                       placeholder="branch name"
-                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      className="px-4 py-3 border border-slate-200 rounded-xl text-sm bg-white"
                     />
                     <input
                       type="text"
                       value={commitMessage}
                       onChange={(e) => setCommitMessage(e.target.value)}
                       placeholder="commit message"
-                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      className="px-4 py-3 border border-slate-200 rounded-xl text-sm bg-white"
                     />
                     <input
                       type="text"
                       value={prTitle}
                       onChange={(e) => setPrTitle(e.target.value)}
                       placeholder="PR title"
-                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      className="px-4 py-3 border border-slate-200 rounded-xl text-sm bg-white"
                     />
                     <input
                       type="text"
                       value={prBody}
                       onChange={(e) => setPrBody(e.target.value)}
                       placeholder="PR body"
-                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      className="px-4 py-3 border border-slate-200 rounded-xl text-sm bg-white"
                     />
                   </div>
                   <button
                     type="button"
                     onClick={handleApplyAndPr}
-                    className="px-4 py-2 text-sm font-medium text-white bg-green-600
-                               rounded-lg hover:bg-green-700 transition-colors"
+                    className="px-4 py-2 text-sm font-semibold text-white bg-emerald-600
+                               rounded-full hover:bg-emerald-700 transition-colors"
                   >
                     Apply Patch + Open PR
                   </button>
                   {prUrl && (
-                    <div className="text-sm text-green-700">
+                    <div className="text-sm text-emerald-700">
                       PR created: {prUrl}
                     </div>
                   )}
@@ -397,7 +397,7 @@ function App() {
       )}
 
       {/* Footer */}
-      <footer className="py-6 text-center text-gray-500 text-sm border-t border-gray-200">
+      <footer className="py-10 text-center text-slate-500 text-sm">
         <p>ROMA Debug - Powered by Gemini</p>
       </footer>
     </div>
