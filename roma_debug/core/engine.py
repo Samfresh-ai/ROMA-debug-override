@@ -631,6 +631,7 @@ def analyze_error(
     include_upstream: bool = True,
     project_root: Optional[str] = None,
     file_tree: Optional[str] = None,
+    system_prompt_suffix: Optional[str] = None,
 ) -> FixResult:
     """Analyze an error with investigation-first debugging (root cause analysis).
 
@@ -659,7 +660,10 @@ def analyze_error(
     resolved_traceback_files = _resolve_traceback_files(traceback_files, project_root)
 
     investigation_prompt = _build_investigation_prompt(log, file_tree)
-    full_prompt = f"{SYSTEM_PROMPT}\n\n{investigation_prompt}"
+    system_prompt = SYSTEM_PROMPT
+    if system_prompt_suffix:
+        system_prompt = f"{SYSTEM_PROMPT}\n\n{system_prompt_suffix}"
+    full_prompt = f"{system_prompt}\n\n{investigation_prompt}"
 
     # Configure for JSON output
     generation_config = types.GenerateContentConfig(
@@ -778,7 +782,7 @@ def analyze_error(
                         missing_files=missing_files,
                         fallback_context=context,
                     )
-                    final_prompt = f"{SYSTEM_PROMPT}\n\n{patch_prompt}"
+                    final_prompt = f"{system_prompt}\n\n{patch_prompt}"
 
                     final_response = client.models.generate_content(
                         model=model_name,

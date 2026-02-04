@@ -13,7 +13,7 @@ import urllib.parse
 import urllib.request
 import logging
 import re
-from typing import Optional, List
+from typing import Optional, List, Callable, TypeVar
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,9 +21,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from roma_debug import __version__
-from roma_debug.config import get_api_key, get_api_key_status
+from roma_debug.config import get_api_key_status
 from roma_debug.core.engine import analyze_error
 from roma_debug.core.models import Language
+from roma_debug.utils.github_integration import GitHubManager
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -65,6 +66,20 @@ class AnalyzeRequest(BaseModel):
     project_root: Optional[str] = None
     language: Optional[str] = None
     include_upstream: bool = True
+
+
+class GitHubAnalyzeRequest(BaseModel):
+    repo_url: str
+    error_log: str
+
+
+_GITHUB_FORCE_PATCH_PROMPT = (
+    "You are a Code Repair Agent. The user has provided an error log from a repository. "
+    "Your job is to generate concrete code patches to fix the error. "
+    "Rule 1: If a file is missing code (like missing middleware), provide the added lines. "
+    "Rule 2: If a file has a bug, provide the replacement lines. "
+    "Rule 3: NEVER return 'General Advice'. You must return a filepath and the fixed code."
+)
 
 
 class GithubOAuthStartResponse(BaseModel):
@@ -160,6 +175,25 @@ class AnalyzeResponse(BaseModel):
     files_read_sources: dict[str, str] = {}
 
 
+class GitHubAnalyzeResponse(AnalyzeResponse):
+    repo_path: str
+
+
+class GitHubFixPayload(BaseModel):
+    filepath: str
+    code: str
+
+
+class GitHubApplyFixRequest(BaseModel):
+    repo_path: str
+    fixes: List[GitHubFixPayload]
+
+
+class GitHubApplyFixResponse(BaseModel):
+    pr_url: Optional[str] = None
+    branch: str
+
+
 def _compute_diff(original: str, fixed: str, filepath: str) -> str:
     import difflib
     original_lines = original.splitlines(keepends=True)
@@ -180,6 +214,7 @@ def _build_analysis_response(
     project_root: Optional[str],
     include_upstream: bool,
     file_tree: Optional[str] = None,
+    system_prompt_suffix: Optional[str] = None,
 ) -> AnalyzeResponse:
     result = analyze_error(
         log,
@@ -187,6 +222,7 @@ def _build_analysis_response(
         include_upstream=include_upstream,
         project_root=project_root,
         file_tree=file_tree,
+        system_prompt_suffix=system_prompt_suffix,
     )
 
     primary_diff = None
@@ -229,6 +265,66 @@ def _build_analysis_response(
         files_read=result.files_read,
         files_read_sources=result.files_read_sources,
     )
+
+
+T = TypeVar("T")
+
+
+async def _run_blocking(label: str, func: Callable[..., T], *args, **kwargs) -> T:
+    start = time.perf_counter()
+    logger.info(f"[block] start {label}")
+    try:
+        return await asyncio.to_thread(func, *args, **kwargs)
+    except Exception:
+        logger.exception(f"[block] error {label}")
+        raise
+    finally:
+        elapsed = time.perf_counter() - start
+        logger.info(f"[block] end {label} in {elapsed:.2f}s")
+
+
+async def _build_analysis_response_async(
+    log: str,
+    context: str,
+    project_root: Optional[str],
+    include_upstream: bool,
+    file_tree: Optional[str] = None,
+    system_prompt_suffix: Optional[str] = None,
+) -> AnalyzeResponse:
+    return await _run_blocking(
+        "analysis",
+        _build_analysis_response,
+        log,
+        context,
+        project_root,
+        include_upstream,
+        file_tree,
+        system_prompt_suffix,
+    )
+
+
+async def _build_context_async(
+    project_root: str,
+    log: str,
+    include_upstream: bool = True,
+    language_hint: Optional[Language] = None,
+) -> tuple[str, Optional[str]]:
+    def _build() -> tuple[str, Optional[str]]:
+        from roma_debug.tracing.context_builder import ContextBuilder
+
+        builder = ContextBuilder(project_root=project_root)
+        analysis_ctx = builder.build_analysis_context(
+            log,
+            language_hint=language_hint,
+        )
+        context = builder.get_context_for_prompt(
+            analysis_ctx,
+            include_upstream=include_upstream,
+        )
+        file_tree = builder.get_file_tree(max_depth=4, max_files_per_dir=15)
+        return context, file_tree
+
+    return await _run_blocking("context_build", _build)
 
 
 def _get_github_oauth_config() -> tuple[str, str, str]:
@@ -465,16 +561,18 @@ async def github_oauth_exchange(request: GithubOAuthExchangeRequest):
         "redirect_uri": redirect_uri,
     }
 
-    req = urllib.request.Request(
-        "https://github.com/login/oauth/access_token",
-        data=urllib.parse.urlencode(payload).encode("utf-8"),
-        headers={"Accept": "application/json"},
-        method="POST",
-    )
+    def _exchange() -> dict:
+        req = urllib.request.Request(
+            "https://github.com/login/oauth/access_token",
+            data=urllib.parse.urlencode(payload).encode("utf-8"),
+            headers={"Accept": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
 
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        data = await _run_blocking("github_oauth_exchange", _exchange)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="OAuth exchange failed") from exc
 
@@ -490,9 +588,9 @@ async def github_oauth_exchange(request: GithubOAuthExchangeRequest):
 async def github_clone(request: GithubCloneRequest):
     token = _get_session_token(request.session_id)
     repo_dir = tempfile.mkdtemp(prefix="roma_repo_")
-    _run_git_clone(request.repo_url, token, repo_dir, ref=request.ref)
-    _enforce_repo_limits(repo_dir)
-    default_branch = _get_repo_default_branch(request.repo_url, token)
+    await _run_blocking("github_clone", _run_git_clone, request.repo_url, token, repo_dir, request.ref)
+    await _run_blocking("github_enforce_limits", _enforce_repo_limits, repo_dir)
+    default_branch = await _run_blocking("github_default_branch", _get_repo_default_branch, request.repo_url, token)
     repo_id = _store_repo(request.session_id, request.repo_url, repo_dir, default_branch)
     return GithubCloneResponse(repo_id=repo_id, repo_path=repo_dir, default_branch=default_branch)
 
@@ -501,20 +599,21 @@ async def github_clone(request: GithubCloneRequest):
 async def github_list_repos(http_request: Request):
     session_id = http_request.headers.get("X-ROMA-GH-SESSION", "")
     token = _get_session_token(session_id)
-
-    req = urllib.request.Request(
-        "https://api.github.com/user/repos?per_page=50&sort=updated",
-        headers={
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"token {token}",
-            "User-Agent": "roma-debug",
-        },
-        method="GET",
-    )
+    def _fetch() -> list[dict]:
+        req = urllib.request.Request(
+            "https://api.github.com/user/repos?per_page=50&sort=updated",
+            headers={
+                "Accept": "application/vnd.github+json",
+                "Authorization": f"token {token}",
+                "User-Agent": "roma-debug",
+            },
+            method="GET",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
 
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        data = await _run_blocking("github_list_repos", _fetch)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Failed to list repos") from exc
 
@@ -572,25 +671,19 @@ async def github_analyze(request: GithubAnalyzeRequest, http_request: Request):
 
         file_tree = None
         try:
-            from roma_debug.tracing.context_builder import ContextBuilder
-
-            builder = ContextBuilder(project_root=repo_path)
-            analysis_ctx = builder.build_analysis_context(
-                request.log,
+            context, file_tree = await _build_context_async(
+                project_root=repo_path,
+                log=request.log,
+                include_upstream=request.include_upstream,
                 language_hint=language_hint,
             )
-            context = builder.get_context_for_prompt(
-                analysis_ctx,
-                include_upstream=request.include_upstream,
-            )
-            file_tree = builder.get_file_tree(max_depth=4, max_files_per_dir=15)
         except Exception:
             context = ""
 
         last_exc: Exception | None = None
         for attempt in range(3):
             try:
-                result = _build_analysis_response(
+                result = await _build_analysis_response_async(
                     log=request.log,
                     context=context,
                     project_root=repo_path,
@@ -645,8 +738,6 @@ async def analyze_stream(request: AnalyzeRequest, http_request: Request):
             file_tree = None
             if not context and project_root:
                 try:
-                    from roma_debug.tracing.context_builder import ContextBuilder
-
                     language_hint = None
                     if request.language:
                         language_map = {
@@ -659,21 +750,17 @@ async def analyze_stream(request: AnalyzeRequest, http_request: Request):
                         }
                         language_hint = language_map.get(request.language.lower())
 
-                    builder = ContextBuilder(project_root=project_root)
-                    analysis_ctx = builder.build_analysis_context(
-                        request.log,
+                    context, file_tree = await _build_context_async(
+                        project_root=project_root,
+                        log=request.log,
+                        include_upstream=request.include_upstream,
                         language_hint=language_hint,
                     )
-                    context = builder.get_context_for_prompt(
-                        analysis_ctx,
-                        include_upstream=request.include_upstream,
-                    )
-                    file_tree = builder.get_file_tree(max_depth=4, max_files_per_dir=15)
                 except Exception as e:
                     logger.warning(f"Context building failed, using basic context: {e}")
 
             yield "event: status\ndata: Analyzing with Gemini...\n\n"
-            response = _build_analysis_response(
+            response = await _build_analysis_response_async(
                 log=request.log,
                 context=context,
                 project_root=project_root,
@@ -728,23 +815,17 @@ async def github_analyze_stream(request: GithubAnalyzeRequest, http_request: Req
                 language_hint = language_map.get(request.language.lower())
 
             try:
-                from roma_debug.tracing.context_builder import ContextBuilder
-
-                builder = ContextBuilder(project_root=repo_path)
-                analysis_ctx = builder.build_analysis_context(
-                    request.log,
+                context, file_tree = await _build_context_async(
+                    project_root=repo_path,
+                    log=request.log,
+                    include_upstream=request.include_upstream,
                     language_hint=language_hint,
                 )
-                context = builder.get_context_for_prompt(
-                    analysis_ctx,
-                    include_upstream=request.include_upstream,
-                )
-                file_tree = builder.get_file_tree(max_depth=4, max_files_per_dir=15)
             except Exception:
                 context = ""
 
             yield "event: status\ndata: Analyzing with Gemini...\n\n"
-            response = _build_analysis_response(
+            response = await _build_analysis_response_async(
                 log=request.log,
                 context=context,
                 project_root=repo_path,
@@ -783,9 +864,12 @@ async def github_apply_patch(request: GithubPatchRequest, http_request: Request)
     if len(request.content.encode("utf-8")) > max_bytes:
         raise HTTPException(status_code=413, detail="Patch too large")
 
-    os.makedirs(os.path.dirname(target), exist_ok=True)
-    with open(target, "w", encoding="utf-8") as handle:
-        handle.write(request.content)
+    def _write() -> None:
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, "w", encoding="utf-8") as handle:
+            handle.write(request.content)
+
+    await _run_blocking("github_apply_patch_write", _write)
 
     return {"status": "ok"}
 
@@ -812,11 +896,14 @@ async def github_apply_patch_batch(request: GithubPatchBatchRequest, http_reques
         if len(patch.content.encode("utf-8")) > max_bytes:
             raise HTTPException(status_code=413, detail="Patch too large")
 
-    for patch in request.patches:
-        target = os.path.realpath(os.path.join(repo_path, patch.filepath))
-        os.makedirs(os.path.dirname(target), exist_ok=True)
-        with open(target, "w", encoding="utf-8") as handle:
-            handle.write(patch.content)
+    def _write_all() -> None:
+        for patch in request.patches:
+            target = os.path.realpath(os.path.join(repo_path, patch.filepath))
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with open(target, "w", encoding="utf-8") as handle:
+                handle.write(patch.content)
+
+    await _run_blocking("github_apply_patch_batch_write", _write_all)
 
     return {"status": "ok"}
 
@@ -829,11 +916,14 @@ async def github_commit(request: GithubCommitRequest, http_request: Request):
     repo_path = _safe_repo_path(str(repo.get("repo_path")))
     default_branch = str(repo.get("default_branch") or "main")
 
-    _run_git(repo_path, ["fetch", "origin", default_branch])
-    _run_git(repo_path, ["checkout", "-B", request.branch, f"origin/{default_branch}"])
-    _ensure_git_identity(repo_path)
-    _run_git(repo_path, ["add", "."])
-    _run_git(repo_path, ["commit", "-m", request.message])
+    def _commit() -> None:
+        _run_git(repo_path, ["fetch", "origin", default_branch])
+        _run_git(repo_path, ["checkout", "-B", request.branch, f"origin/{default_branch}"])
+        _ensure_git_identity(repo_path)
+        _run_git(repo_path, ["add", "."])
+        _run_git(repo_path, ["commit", "-m", request.message])
+
+    await _run_blocking("github_commit", _commit)
 
     return {"status": "ok"}
 
@@ -845,35 +935,38 @@ async def github_open_pr(request: GithubPrRequest, http_request: Request):
     repo = _get_repo(request.repo_id, session_id)
     repo_path = _safe_repo_path(str(repo.get("repo_path")))
 
-    _run_git(repo_path, ["push", "--force-with-lease", "origin", request.branch])
+    def _open() -> dict:
+        _run_git(repo_path, ["push", "--force-with-lease", "origin", request.branch])
 
-    repo_url = str(repo.get("repo_url"))
-    default_branch = str(repo.get("default_branch") or "main")
-    parsed = urllib.parse.urlparse(repo_url)
-    owner_repo = parsed.path.strip("/").replace(".git", "")
+        repo_url = str(repo.get("repo_url"))
+        default_branch = str(repo.get("default_branch") or "main")
+        parsed = urllib.parse.urlparse(repo_url)
+        owner_repo = parsed.path.strip("/").replace(".git", "")
 
-    payload = json.dumps({
-        "title": request.title,
-        "head": request.branch,
-        "base": default_branch,
-        "body": request.body or "",
-    }).encode("utf-8")
+        payload = json.dumps({
+            "title": request.title,
+            "head": request.branch,
+            "base": default_branch,
+            "body": request.body or "",
+        }).encode("utf-8")
 
-    req = urllib.request.Request(
-        f"https://api.github.com/repos/{owner_repo}/pulls",
-        data=payload,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"token {token}",
-            "Content-Type": "application/json",
-            "User-Agent": "roma-debug",
-        },
-        method="POST",
-    )
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{owner_repo}/pulls",
+            data=payload,
+            headers={
+                "Accept": "application/vnd.github+json",
+                "Authorization": f"token {token}",
+                "Content-Type": "application/json",
+                "User-Agent": "roma-debug",
+            },
+            method="POST",
+        )
+
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
 
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        data = await _run_blocking("github_open_pr", _open)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Failed to open PR") from exc
 
@@ -882,8 +975,79 @@ async def github_open_pr(request: GithubPrRequest, http_request: Request):
 
 @app.post("/github/cleanup")
 async def github_cleanup():
-    removed = _cleanup_expired_repos()
+    removed = await _run_blocking("github_cleanup", _cleanup_expired_repos)
     return {"status": "ok", "removed": removed}
+
+
+@app.post("/analyze-github", response_model=GitHubAnalyzeResponse)
+async def analyze_github(request: GitHubAnalyzeRequest):
+    manager = GitHubManager.from_env()
+    repo_path = await _run_blocking("analyze_github_clone", manager.clone_repo, request.repo_url)
+    context = ""
+    file_tree = None
+    try:
+        context, file_tree = await _build_context_async(
+            project_root=repo_path,
+            log=request.error_log,
+            include_upstream=True,
+        )
+    except Exception as e:
+        logger.warning(f"Context building failed, using basic context: {e}")
+
+    response = await _build_analysis_response_async(
+        log=request.error_log,
+        context=context,
+        project_root=repo_path,
+        include_upstream=True,
+        file_tree=file_tree,
+        system_prompt_suffix=_GITHUB_FORCE_PATCH_PROMPT,
+    )
+
+    return GitHubAnalyzeResponse(**response.dict(), repo_path=repo_path)
+
+
+@app.post("/apply-fix-github", response_model=GitHubApplyFixResponse)
+async def apply_fix_github(request: GitHubApplyFixRequest):
+    manager = GitHubManager.from_env()
+    repo_path = request.repo_path
+    await _run_blocking("apply_fix_ensure_repo", manager._ensure_repo_path, repo_path)
+
+    if not request.fixes:
+        raise HTTPException(status_code=400, detail="No fixes provided")
+
+    def _apply_and_commit() -> tuple[str, Optional[str]]:
+        repo_root = os.path.realpath(repo_path) + os.sep
+        for fix in request.fixes:
+            if not fix.filepath or fix.filepath.startswith(".."):
+                raise HTTPException(status_code=400, detail="Invalid filepath")
+            target = os.path.realpath(os.path.join(repo_path, fix.filepath))
+            if not target.startswith(repo_root):
+                raise HTTPException(status_code=400, detail="Invalid filepath")
+
+        for fix in request.fixes:
+            target = os.path.realpath(os.path.join(repo_path, fix.filepath))
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with open(target, "w", encoding="utf-8") as handle:
+                handle.write(fix.code or "")
+
+        branch = f"roma-fix-{int(time.time())}"
+        manager.create_branch(repo_path, branch)
+        _ensure_git_identity(repo_path)
+
+        status = manager._run(["git", "status", "--porcelain"], cwd=repo_path)
+        if not status:
+            raise HTTPException(status_code=400, detail="No changes to commit")
+
+        manager.commit_and_push(repo_path, "ROMA Debug: apply fixes")
+        pr_url = manager.create_pr(
+            repo_path,
+            title="ROMA Debug fixes",
+            body="Automated fixes generated by ROMA Debug.",
+        )
+        return branch, pr_url
+
+    branch, pr_url = await _run_blocking("apply_fix_git_ops", _apply_and_commit)
+    return GitHubApplyFixResponse(pr_url=pr_url, branch=branch)
 
 
 @app.post("/analyze", response_model=AnalyzeResponse)
@@ -943,8 +1107,6 @@ async def analyze(request: AnalyzeRequest, http_request: Request):
         file_tree = None
         if not context and project_root:
             try:
-                from roma_debug.tracing.context_builder import ContextBuilder
-
                 language_hint = None
                 if request.language:
                     language_map = {
@@ -956,21 +1118,16 @@ async def analyze(request: AnalyzeRequest, http_request: Request):
                         "java": Language.JAVA,
                     }
                     language_hint = language_map.get(request.language.lower())
-
-                builder = ContextBuilder(project_root=project_root)
-                analysis_ctx = builder.build_analysis_context(
-                    request.log,
+                context, file_tree = await _build_context_async(
+                    project_root=project_root,
+                    log=request.log,
+                    include_upstream=request.include_upstream,
                     language_hint=language_hint,
                 )
-                context = builder.get_context_for_prompt(
-                    analysis_ctx,
-                    include_upstream=request.include_upstream,
-                )
-                file_tree = builder.get_file_tree(max_depth=4, max_files_per_dir=15)
             except Exception as e:
                 logger.warning(f"Context building failed, using basic context: {e}")
 
-        return _build_analysis_response(
+        return await _build_analysis_response_async(
             log=request.log,
             context=context,
             project_root=project_root,
@@ -986,12 +1143,8 @@ async def analyze(request: AnalyzeRequest, http_request: Request):
 
 @app.api_route("/health", methods=["GET", "HEAD"])
 async def health():
-    """Health check endpoint."""
-    return {
-        "status": "ok",
-        "version": __version__,
-        "api_key_configured": bool(get_api_key()),
-    }
+    """Lightweight health check endpoint."""
+    return {"status": "ok"}
 
 
 @app.get("/")

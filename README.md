@@ -34,6 +34,11 @@ Install:
 pip install roma-debug
 ```
 
+From source (dev):
+```bash
+pip install -e .
+```
+
 Run:
 ```bash
 roma
