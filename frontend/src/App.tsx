@@ -3,10 +3,8 @@ import { Header } from './components/Header';
 import { LogPasteArea } from './components/LogPasteArea';
 import { FixDisplay } from './components/FixDisplay';
 import {
-  analyzeError,
   analyzeErrorStream,
   AnalyzeResponse,
-  githubAnalyzeRepo,
   githubAnalyzeRepoStream,
   githubApplyPatchBatch,
   githubCommit,
