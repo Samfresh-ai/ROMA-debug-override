@@ -6,9 +6,19 @@ If you’re tired of “paste error into a chat” debugging, ROMA is the differ
 
 ---
 
-## 🔥 Quick Demo (Add Screenshot Here)
+## 🔥 Quick Demo
 
-> Drop in a screenshot or GIF of ROMA in action to show error → root cause → patch → PR flow.
+> .
+<img width="1366" height="703" alt="Screenshot (131)" src="https://github.com/user-attachments/assets/fd41f29f-d738-488d-a5e3-9aa058c72a3d" />
+<img width="1366" height="768" alt="Screenshot (135)" src="https://github.com/user-attachments/assets/4487f201-72f2-4f8e-b3fe-24be3bbed901" />
+<img width="1132" height="660" alt="Screenshot (132)" src="https://github.com/user-attachments/assets/2a0a263f-3afb-4207-bddc-fe143ed69ff4" />
+<img width="1366" height="768" alt="Screenshot (136)" src="https://github.com/user-attachments/assets/2bd058ed-4577-44c6-bb45-8cd075775532" />
+> .
+![VideoProject1-ezgif com-video-to-gif-converter](https://github.com/user-attachments/assets/829963eb-7931-47f7-ab9e-b679ff396413)
+![VideoProjectxx-ezgif com-video-to-gif-converter](https://github.com/user-attachments/assets/b4b41fb0-c957-4b28-b610-bcdc43986689)
+
+
+
 
 ---
 
@@ -34,11 +44,6 @@ Install:
 pip install roma-debug
 ```
 
-From source (dev):
-```bash
-pip install -e .
-```
-
 Run:
 ```bash
 roma
@@ -55,6 +60,18 @@ Paste your error log or request, then press Enter on an empty line.
 - `roma --serve` — start API server
 
 ---
+## The CLI (For Local Testing)
+If you prefer to run the tool locally to test the file-system patching features:
+
+Clone:
+```bash
+git clone https://github.com/Samfresh-ai/ROMA-debug-override
+Install: pip install -e .
+```
+Config: Create a .env file with your GEMINI_API_KEY.
+
+Run: Type `roma` in your terminal and paste an error log.
+
 
 ## API Server
 
