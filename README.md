@@ -1,24 +1,37 @@
-# ROMA Debug
+## ROMA Debug
 
-**Investigation‑first AI debugger** for real projects. ROMA reads your codebase, traces imports and call chains, then returns precise, multi‑file fixes you can review, apply, and even ship as a GitHub PR.
-
-If you’re tired of “paste error into a chat” debugging, ROMA is the difference between a guess and a root cause.
+<p align="center">
+  <b>The Investigation‑First AI Debugger</b>
+  <br>
+  <i>Reads your codebase. Traces the root cause. Ships the fix.</i>
+  <br>
+  <br>
+  <a href="https://roma-debug.onrender.com"><strong>Live Web Demo »</strong></a>
+  &nbsp;|&nbsp;
+  <a href="#30second-start">Install CLI</a>
+  &nbsp;|&nbsp;
+  <a href="#github-repo-mode-web-agent">GitHub Agent</a>
+</p>
 
 ---
 
-## 🔥 Quick Demo
+**ROMA** is not a chatbot. It is an **Autonomous Debugging Agent** that lives inside your dev environment.
 
-> .
-<img width="1366" height="703" alt="Screenshot (131)" src="https://github.com/user-attachments/assets/fd41f29f-d738-488d-a5e3-9aa058c72a3d" />
-<img width="1366" height="768" alt="Screenshot (135)" src="https://github.com/user-attachments/assets/4487f201-72f2-4f8e-b3fe-24be3bbed901" />
-<img width="1132" height="660" alt="Screenshot (132)" src="https://github.com/user-attachments/assets/2a0a263f-3afb-4207-bddc-fe143ed69ff4" />
-<img width="1366" height="768" alt="Screenshot (136)" src="https://github.com/user-attachments/assets/2bd058ed-4577-44c6-bb45-8cd075775532" />
-> .
+It parses stack traces, resolves imports, builds a dependency graph of your local files, and uses **Google Gemini 2.5** to generate surgical, multi-file patches. You can review the diffs in your terminal or use the Web Agent to open a Pull Request automatically.
+
+---
+
+## ⚡ See It In Action
+
+### 1. The CLI Agent (Local Debugging)
+*Paste an error, get a Red/Green diff, and apply the patch instantly.*
+
 <p align="center">
   <img src="https://github.com/user-attachments/assets/829963eb-7931-47f7-ab9e-b679ff396413" alt="ROMA CLI Demo" width="100%">
 </p>
 
-<br>
+### 2. The Web Agent (GitHub Integration)
+*Connect a repo, analyze a CI failure, and open a Pull Request.*
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/b4b41fb0-c957-4b28-b610-bcdc43986689" alt="ROMA Web Agent Demo" width="100%">
@@ -26,137 +39,85 @@ If you’re tired of “paste error into a chat” debugging, ROMA is the differ
 
 ---
 
-## What Makes ROMA Different
+## What Makes ROMA Different?
 
-**ROMA doesn’t just answer. It investigates.**
+Most AI tools guess based on the error message alone. **ROMA investigates.**
 
-- Parses stack traces across Python, JS/TS, Go, Rust, Java
-- Extracts real file context (AST + tree‑sitter)
-- Builds dependency graphs and call chains
-- Identifies root cause files, not just the crash line
-- Returns structured, machine‑readable fixes with file paths
-- Safe apply with diff + backup
-
-**Bonus:** GitHub‑connected mode that can open a PR with your fixes.
+*   **Context-Aware:** Reads the *real* file content (using AST + Tree-sitter) referenced in the stack trace.
+*   **Dependency Tracing:** Follows imports to find the root cause, even if it's not in the file that crashed.
+*   **Safety First:** Calculates a local `difflib` patch and shows you exactly what will change before touching your disk.
+*   **Full Stack:** Supports Python, JS/TS, Go, Rust, and Java stack traces.
 
 ---
 
-## 30‑Second Start
+## 30‑Second Start (CLI)
 
-Install:
+The fastest way to fix a bug on your machine.
+
+### 1. Install
 ```bash
 pip install roma-debug
 ```
 
-Run:
+### 2. Setup API Key
+Export your Gemini API key (or create a `.env` file):
+```bash
+export GEMINI_API_KEY="your_api_key_here"
+```
+
+### 3. Run
 ```bash
 roma
 ```
-Paste your error log or request, then press Enter on an empty line.
+*Paste your error log, hit Enter, and watch it work.*
 
 ---
 
-## CLI (Core Flow)
+## GitHub Repo Mode (Web Agent)
 
-- `roma` — interactive mode
-- `roma <file>` — analyze a log file
-- `roma --language <lang>` — hint language
-- `roma --serve` — start API server
+ROMA can act as a **CI/CD Repair Agent**. It clones your repository into a secure sandbox, reproduces the context, and ships a fix.
 
----
-## The CLI (For Local Testing)
-If you prefer to run the tool locally to test the file-system patching features:
+1.  **Go to the Web UI:** `http://localhost:5173` (or your deployed link).
+2.  **Connect GitHub:** Authorize ROMA to access your public/private repos.
+3.  **Analyze:** Paste the Repo URL and the Error Log.
+4.  **Ship:** Click "Create Pull Request" to commit the fix.
 
-Clone:
+### Running the Web Server Locally
 ```bash
-git clone https://github.com/Samfresh-ai/ROMA-debug-override
-Install: pip install -e .
-```
-Config: Create a .env file with your GEMINI_API_KEY.
-
-Run: Type `roma` in your terminal and paste an error log.
-
-
-## API Server
-
-```bash
+# 1. Start the Backend
 roma --serve --port 8080
-```
 
-### POST /analyze
-```bash
-curl -X POST http://localhost:8080/analyze \
-  -H "Content-Type: application/json" \
-  -d '{"log": "Traceback...", "context": "", "project_root": "/path/to/project"}'
-```
-
-Note: `project_root` is only accepted when `ROMA_ALLOW_PROJECT_ROOT=true`.
-
-### GET /info
-```bash
-curl http://localhost:8080/info
-```
-
----
-
-## Frontend (Optional)
-
-```bash
+# 2. Start the Frontend
 cd frontend
-npm install
-npm run dev
+npm install && npm run dev
 ```
-Open `http://localhost:5173`.
-
-Vite proxy is configured for `/analyze`, `/github`, `/health`, `/info`.
 
 ---
 
-## GitHub Repo Mode (OAuth + PRs)
+## ⚙️ Configuration
 
-ROMA can connect to GitHub, clone private repos, analyze errors, and open PRs with the fix.
+ROMA is highly configurable via Environment Variables or `.env` file.
 
-### Required OAuth env vars
-```
-GITHUB_CLIENT_ID=...
-GITHUB_CLIENT_SECRET=...
-GITHUB_REDIRECT_URI=http://localhost:5173
-```
-
-### OAuth App settings
-- Homepage URL: `http://localhost:5173`
-- Authorization callback URL: `http://localhost:5173`
-
----
-
-## Configuration
-
-| Variable | Description |
-|---------|-------------|
-| `GEMINI_API_KEYS` | Comma‑separated keys (rotation pool). Recommended. |
-| `GEMINI_API_KEY` / `GEMINI_API_KEY2...` | Single/multi‑key fallback. |
-| `ROMA_ALLOWED_ORIGINS` | CORS allowlist (comma‑separated). |
-| `ROMA_ALLOWED_ORIGIN_REGEX` | CORS origin regex (useful for Render subdomains). |
-| `ROMA_API_KEY` | Require `X-ROMA-API-KEY` header for API. |
-| `ROMA_MAX_LOG_BYTES` | Max log size (bytes). |
-| `ROMA_MAX_PATCH_BYTES` | Max patch size (bytes) for writes. |
-| `ROMA_ALLOW_PROJECT_ROOT` | Allow client‑supplied `project_root`. |
-| `ROMA_MAX_REPO_FILES` | Max files for repo clones. |
-| `ROMA_MAX_REPO_BYTES` | Max repo size for clones. |
-| `ROMA_DEBUG_KEYS` | Print key index selection for debugging. |
-| `ROMA_MODELS` / `GEMINI_MODELS` | Comma‑separated model priority list (overrides defaults: `gemini-3-flash-preview, gemini-2.5-flash, gemini-2.5-flash-lite`). |
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `GEMINI_API_KEY` | Your Google Gemini API Key. | Required |
+| `ROMA_MODELS` | Priority list of models to use. | `gemini-2.5-flash-lite` |
+| `ROMA_ALLOW_PROJECT_ROOT` | Allow the API to read files from a specific path. | `False` |
+| `GITHUB_CLIENT_ID` | Required for Web Agent OAuth. | None |
+| `GITHUB_CLIENT_SECRET` | Required for Web Agent OAuth. | None |
+| `ROMA_MAX_LOG_BYTES` | Max size of error log input. | `10000` |
 
 ---
 
 ## Under the Hood
 
-- Traceback parsing across languages
-- Tree‑sitter + AST for semantic extraction
-- Import resolution + dependency graph
-- Call chain analysis for upstream root causes
-- Structured JSON patches for deterministic edits
+ROMA uses a multi-stage reasoning pipeline:
+1.  **Ingestion:** Regex-based parsing of stack traces across 5+ languages.
+2.  **Retrieval:** AST extraction to pull only relevant function/class scopes (saving tokens).
+3.  **Reasoning:** Gemini 2.5 Flash Lite analyzes the logic flow.
+4.  **Patching:** `difflib` generates a unified diff, which is applied atomically to the file system.
 
 ---
 
-## License
-MIT
+## 📄 License
+MIT © [Samfresh-ai](https://github.com/Samfresh-ai)
