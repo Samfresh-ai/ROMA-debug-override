@@ -14,11 +14,15 @@ If you’re tired of “paste error into a chat” debugging, ROMA is the differ
 <img width="1132" height="660" alt="Screenshot (132)" src="https://github.com/user-attachments/assets/2a0a263f-3afb-4207-bddc-fe143ed69ff4" />
 <img width="1366" height="768" alt="Screenshot (136)" src="https://github.com/user-attachments/assets/2bd058ed-4577-44c6-bb45-8cd075775532" />
 > .
-![VideoProject1-ezgif com-video-to-gif-converter](https://github.com/user-attachments/assets/829963eb-7931-47f7-ab9e-b679ff396413)
-![VideoProjectxx-ezgif com-video-to-gif-converter](https://github.com/user-attachments/assets/b4b41fb0-c957-4b28-b610-bcdc43986689)
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/829963eb-7931-47f7-ab9e-b679ff396413" alt="ROMA CLI Demo" width="100%">
+</p>
 
+<br>
 
-
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/b4b41fb0-c957-4b28-b610-bcdc43986689" alt="ROMA Web Agent Demo" width="100%">
+</p>
 
 ---
 
