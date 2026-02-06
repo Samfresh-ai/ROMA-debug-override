@@ -101,7 +101,7 @@ ROMA is highly configurable via Environment Variables or `.env` file.
 | Variable | Description | Default |
 | :--- | :--- | :--- |
 | `GEMINI_API_KEY` | Your Google Gemini API Key. | Required |
-| `ROMA_MODELS` | Priority list of models to use. | `gemini-2.5-flash-lite` |
+| `ROMA_MODELS` | Priority list of models to use. | `gemini-3-flash-preview, gemini-2.5-flash, gemini-2.5-flash-lite` |
 | `ROMA_ALLOW_PROJECT_ROOT` | Allow the API to read files from a specific path. | `False` |
 | `GITHUB_CLIENT_ID` | Required for Web Agent OAuth. | None |
 | `GITHUB_CLIENT_SECRET` | Required for Web Agent OAuth. | None |
@@ -114,7 +114,7 @@ ROMA is highly configurable via Environment Variables or `.env` file.
 ROMA uses a multi-stage reasoning pipeline:
 1.  **Ingestion:** Regex-based parsing of stack traces across 5+ languages.
 2.  **Retrieval:** AST extraction to pull only relevant function/class scopes (saving tokens).
-3.  **Reasoning:** Gemini 2.5 Flash Lite analyzes the logic flow.
+3.  **Reasoning:**gemini-3-flash-preview(analyzes the logic flow), gemini-2.5-flash, gemini-2.5-flash-lite.
 4.  **Patching:** `difflib` generates a unified diff, which is applied atomically to the file system.
 
 ---
